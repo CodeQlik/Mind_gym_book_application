@@ -34,24 +34,29 @@ class _SignInScreenState extends State<LoginScreen> {
     setState(() => isLoading = true);
 
     try {
-      LoginModel user = await ApiService.loginUser(
+      final LoginModel? user = await ApiService.loginUser(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
 
+      if (user == null) return;
+
       if (mounted) {
-        debugPrint("Login success: ${user.name}");
+        debugPrint("Login success: ${user.name} (ID: ${user.id})");
+        debugPrint(
+            "Token extracted: ${user.token.substring(0, user.token.length > 10 ? 10 : user.token.length)}...");
         // Save user to shared preferences for persistence
         await AuthService.saveUser(user);
-        debugPrint("User saved. Navigating to MainScreen...");
-        
+        debugPrint(
+            "User saved with token length: ${user.token.length}. Navigating...");
+
         setState(() => isLoading = false);
         _showSnackBar("Welcome back, ${user.name}!");
-        
-        // Use Future.delayed to ensure context is stable and snackbar is seen? 
+
+        // Use Future.delayed to ensure context is stable and snackbar is seen?
         // Or just navigate immediately.
         if (!mounted) return;
-        
+
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => MainScreen(user: user)),
           (Route<dynamic> route) => false,
@@ -140,7 +145,8 @@ class _SignInScreenState extends State<LoginScreen> {
           shadowColor: Colors.transparent,
           foregroundColor: Colors.white,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
         ),
         child: isLoading
             ? const CircularProgressIndicator(color: Colors.white)
@@ -163,11 +169,11 @@ class _SignInScreenState extends State<LoginScreen> {
       body: Stack(
         children: [
           _buildGradientBackground(),
-          
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -179,7 +185,10 @@ class _SignInScreenState extends State<LoginScreen> {
                         color: Colors.white,
                         letterSpacing: 1.2,
                         shadows: [
-                          Shadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4)),
+                          Shadow(
+                              color: Colors.black26,
+                              blurRadius: 10,
+                              offset: Offset(0, 4)),
                         ],
                       ),
                     ),
@@ -204,7 +213,8 @@ class _SignInScreenState extends State<LoginScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(25),
-                            border: Border.all(color: Colors.white.withOpacity(0.2)),
+                            border: Border.all(
+                                color: Colors.white.withOpacity(0.2)),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.1),
@@ -218,19 +228,23 @@ class _SignInScreenState extends State<LoginScreen> {
                             child: Column(
                               children: [
                                 const SizedBox(height: 10),
-                                
+
                                 TextFormField(
                                   controller: emailController,
-                                  decoration: _modernInputStyle("Email Address", icon: Icons.email_outlined),
-                                  validator: (v) => v!.isEmpty ? "Enter email" : null,
+                                  decoration: _modernInputStyle("Email Address",
+                                      icon: Icons.email_outlined),
+                                  validator: (v) =>
+                                      v!.isEmpty ? "Enter email" : null,
                                 ),
                                 const SizedBox(height: 20),
 
                                 TextFormField(
                                   controller: passwordController,
                                   obscureText: true,
-                                  decoration: _modernInputStyle("Password", icon: Icons.lock_outline),
-                                  validator: (v) => v!.isEmpty ? "Enter password" : null,
+                                  decoration: _modernInputStyle("Password",
+                                      icon: Icons.lock_outline),
+                                  validator: (v) =>
+                                      v!.isEmpty ? "Enter password" : null,
                                 ),
 
                                 const SizedBox(height: 15),
@@ -281,7 +295,8 @@ class _SignInScreenState extends State<LoginScreen> {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => const SignUpScreen()),
+                              MaterialPageRoute(
+                                  builder: (context) => const SignUpScreen()),
                             );
                           },
                           child: const Text(

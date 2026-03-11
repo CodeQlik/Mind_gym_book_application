@@ -10,6 +10,9 @@ class LoginModel {
   final bool isVerified;
   final String createdAt;
   final String updatedAt;
+  final String subscriptionStatus;
+  final String subscriptionPlan;
+  final String subscriptionEndDate;
   final String token;
 
   LoginModel({
@@ -24,23 +27,54 @@ class LoginModel {
     required this.isVerified,
     required this.createdAt,
     required this.updatedAt,
+    required this.subscriptionStatus,
+    required this.subscriptionPlan,
+    required this.subscriptionEndDate,
     required this.token,
   });
 
+  bool get isUserPremium =>
+      subscriptionStatus == 'active' || subscriptionStatus == 'premium';
+
   factory LoginModel.fromJson(Map<String, dynamic> json) {
     return LoginModel(
-      id: json['id'],
-      userType: json['user_type'] ?? '',
-      name: json['name'],
-      email: json['email'],
-      phone: json['phone'],
-      additionalPhone: json['additional_phone'] ?? '',
+      id: json['id'] is int
+          ? json['id']
+          : (json['user_id'] is int
+              ? json['user_id']
+              : int.tryParse(json['id']?.toString() ??
+                      json['user_id']?.toString() ??
+                      '0') ??
+                  0),
+      userType:
+          json['user_type']?.toString() ?? json['userType']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      additionalPhone: json['additional_phone']?.toString() ??
+          json['additionalPhone']?.toString() ??
+          '',
       profile: ProfileData.fromJson(json['profile'] ?? {}),
-      isActive: json['is_active'] ?? false,
-      isVerified: json['is_verified'] ?? false,
-      createdAt: json['createdAt'] ?? '',
-      updatedAt: json['updatedAt'] ?? '',
-      token: json['token'] ?? '',
+      isActive: json['is_active'] == true || json['isActive'] == true,
+      isVerified: json['is_verified'] == true || json['isVerified'] == true,
+      createdAt: (json['created_at'] ?? json['createdAt'])?.toString() ?? '',
+      updatedAt: (json['updated_at'] ?? json['updatedAt'])?.toString() ?? '',
+      subscriptionStatus:
+          (json['subscription_status'] ?? json['subscriptionStatus'])
+                  ?.toString() ??
+              '',
+      subscriptionPlan:
+          (json['subscription_plan'] ?? json['subscriptionPlan'])?.toString() ??
+              '',
+      subscriptionEndDate:
+          (json['subscription_end_date'] ?? json['subscriptionEndDate'])
+                  ?.toString() ??
+              '',
+      token: (json['token']?.toString().isNotEmpty == true)
+          ? json['token'].toString()
+          : (json['accessToken']?.toString().isNotEmpty == true)
+              ? json['accessToken'].toString()
+              : '',
     );
   }
   Map<String, dynamic> toJson() {
@@ -56,6 +90,9 @@ class LoginModel {
       'is_verified': isVerified,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
+      'subscription_status': subscriptionStatus,
+      'subscription_plan': subscriptionPlan,
+      'subscription_end_date': subscriptionEndDate,
       'token': token,
     };
   }

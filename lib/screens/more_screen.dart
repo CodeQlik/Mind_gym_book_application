@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/login_model.dart';
+import 'notes_screen.dart';
 import 'settings_screen.dart';
 
 class MoreScreen extends StatefulWidget {
@@ -11,7 +12,8 @@ class MoreScreen extends StatefulWidget {
 }
 
 class _MoreScreenState extends State<MoreScreen> {
-  String _lastSyncedTime = "2/8/26, 5:42 PM"; // Placeholder, can be dynamic later
+  String _lastSyncedTime =
+      "2/8/26, 5:42 PM"; // Placeholder, can be dynamic later
 
   @override
   void initState() {
@@ -24,11 +26,13 @@ class _MoreScreenState extends State<MoreScreen> {
     final now = DateTime.now();
     // Simple formatting for demo: MO/DAY/YR, H:MM AM/PM
     // In a real app, use intl package
-    final hour = now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
+    final hour =
+        now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
     final amPm = now.hour >= 12 ? 'PM' : 'AM';
     final minute = now.minute.toString().padLeft(2, '0');
     setState(() {
-      _lastSyncedTime = "${now.month}/${now.day}/${now.year % 100}, $hour:$minute $amPm";
+      _lastSyncedTime =
+          "${now.month}/${now.day}/${now.year % 100}, $hour:$minute $amPm";
     });
   }
 
@@ -42,13 +46,15 @@ class _MoreScreenState extends State<MoreScreen> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: ListView(
-        padding: EdgeInsets.only(top: topPadding, bottom: 100), // Bottom padding for nav bar
+        padding: EdgeInsets.only(
+            top: topPadding, bottom: 100), // Bottom padding for nav bar
         children: [
-          _buildSectionHeader(theme, "Reading Insights", Icons.insights_rounded, Colors.blueAccent),
-          _buildSectionHeader(theme, "Notebooks", Icons.book_rounded, Colors.teal),
-          
-          Divider(height: 32, thickness: 0.5, color: theme.dividerColor.withOpacity(0.3)),
-
+          _buildSectionHeader(
+              theme, "Notebooks", Icons.book_rounded, Colors.teal),
+          Divider(
+              height: 32,
+              thickness: 0.5,
+              color: theme.dividerColor.withOpacity(0.3)),
           _buildSyncItem(theme),
           _buildMenuItem(theme, "Settings", Icons.settings_outlined),
           _buildMenuItem(theme, "Help & Feedback", Icons.help_outline),
@@ -57,7 +63,8 @@ class _MoreScreenState extends State<MoreScreen> {
     );
   }
 
-  Widget _buildSectionHeader(ThemeData theme, String title, IconData icon, Color iconColor) {
+  Widget _buildSectionHeader(
+      ThemeData theme, String title, IconData icon, Color iconColor) {
     return ListTile(
       leading: Icon(icon, color: iconColor, size: 28),
       title: Text(
@@ -68,7 +75,14 @@ class _MoreScreenState extends State<MoreScreen> {
       ),
       trailing: Icon(Icons.chevron_right_rounded, color: theme.disabledColor),
       onTap: () {
-        // TODO: Navigate to respective screen
+        if (title == "Notebooks") {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => NotesScreen(user: widget.user),
+            ),
+          );
+        }
       },
     );
   }
@@ -114,14 +128,15 @@ class _MoreScreenState extends State<MoreScreen> {
       onTap: () {
         // Trigger generic sync animation/logic
         setState(() {
-           _updateSyncTime();
+          _updateSyncTime();
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text("Syncing content..."),
             backgroundColor: theme.cardColor,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             /*action: SnackBarAction(
               label: 'Undo',
               textColor: theme.primaryColor,

@@ -81,7 +81,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     try {
       // 1. Verify Email
-      await ApiService.verifyEmail(
+      String verificationToken = await ApiService.verifyEmail(
         email: emailController.text.trim(),
         otp: otpController.text.trim(),
       );
@@ -93,12 +93,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
         password: passwordController.text.trim(),
         phone: phoneController.text.trim(),
         additionalPhone: additionalPhoneController.text.trim(),
+        verificationToken: verificationToken,
         profileImage: profileImage,
         webImage: webImage,
       );
 
       setState(() => isLoading = false);
-      
+
       if (mounted) {
         _showSnackBar("Welcome ${user.name}! Registration successful");
         Navigator.pushReplacement(
@@ -183,10 +184,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
               backgroundColor: Colors.grey.shade200,
               child: ClipOval(
                 child: webImage != null
-                    ? Image.memory(webImage!, width: 90, height: 90, fit: BoxFit.cover)
+                    ? Image.memory(webImage!,
+                        width: 90, height: 90, fit: BoxFit.cover)
                     : profileImage != null
-                        ? Image.file(profileImage!, width: 90, height: 90, fit: BoxFit.cover)
-                        : Icon(Icons.person, size: 45, color: Colors.grey.shade400),
+                        ? Image.file(profileImage!,
+                            width: 90, height: 90, fit: BoxFit.cover)
+                        : Icon(Icons.person,
+                            size: 45, color: Colors.grey.shade400),
               ),
             ),
           ),
@@ -199,7 +203,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 color: Colors.white,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.camera_alt, size: 18, color: Color(0xFF764BA2)),
+              child: const Icon(Icons.camera_alt,
+                  size: 18, color: Color(0xFF764BA2)),
             ),
           ),
         ],
@@ -218,12 +223,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
           Expanded(
             child: TextFormField(
               controller: emailController,
-              decoration: _modernInputStyle("Email Address", icon: Icons.email_outlined).copyWith(
+              decoration:
+                  _modernInputStyle("Email Address", icon: Icons.email_outlined)
+                      .copyWith(
                 filled: false,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
                 prefixIcon: const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16),
                   child: Icon(Icons.email_outlined, color: Colors.grey),
@@ -244,24 +252,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
               onPressed: isEmailFilled
                   ? () async {
                       try {
-                        bool success = await ApiService.sendOtp(email: emailController.text.trim());
+                        bool success = await ApiService.sendOtp(
+                            email: emailController.text.trim());
                         if (success) {
                           setState(() => showOtpField = true);
                           if (mounted) _showSnackBar("OTP sent!");
                         }
                       } catch (e) {
-                         if (mounted) _showSnackBar(e.toString());
+                        if (mounted) _showSnackBar(e.toString());
                       }
                     }
                   : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: isEmailFilled ? const Color(0xFF764BA2) : Colors.grey.shade300,
+                backgroundColor: isEmailFilled
+                    ? const Color(0xFF764BA2)
+                    : Colors.grey.shade300,
                 foregroundColor: Colors.white,
                 elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24)),
               ),
-              child: const Text("Verify", style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text("Verify",
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -293,7 +307,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
           shadowColor: Colors.transparent,
           foregroundColor: Colors.white,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
         ),
         child: isLoading
             ? const CircularProgressIndicator(color: Colors.white)
@@ -316,11 +331,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
       body: Stack(
         children: [
           _buildGradientBackground(),
-          
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -332,7 +347,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         color: Colors.white,
                         letterSpacing: 1.2,
                         shadows: [
-                          Shadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4)),
+                          Shadow(
+                              color: Colors.black26,
+                              blurRadius: 10,
+                              offset: Offset(0, 4)),
                         ],
                       ),
                     ),
@@ -357,7 +375,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(25),
-                            border: Border.all(color: Colors.white.withOpacity(0.2)),
+                            border: Border.all(
+                                color: Colors.white.withOpacity(0.2)),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.1),
@@ -372,60 +391,69 @@ class _SignUpScreenState extends State<SignUpScreen> {
                               children: [
                                 _buildProfileAvatar(),
                                 const SizedBox(height: 25),
-
                                 TextFormField(
                                   controller: nameController,
-                                  decoration: _modernInputStyle("Full Name", icon: Icons.person_outline),
-                                  validator: (v) => v!.isEmpty ? "Enter name" : null,
+                                  decoration: _modernInputStyle("Full Name",
+                                      icon: Icons.person_outline),
+                                  validator: (v) =>
+                                      v!.isEmpty ? "Enter name" : null,
                                 ),
                                 const SizedBox(height: 16),
-
                                 _buildEmailVerificationRow(),
-
                                 if (showOtpField) ...[
                                   const SizedBox(height: 16),
                                   TextFormField(
                                     controller: otpController,
                                     keyboardType: TextInputType.number,
                                     maxLength: 6,
-                                    decoration: _modernInputStyle("Enter 6-digit OTP", icon: Icons.lock_clock_outlined).copyWith(
+                                    decoration: _modernInputStyle(
+                                            "Enter 6-digit OTP",
+                                            icon: Icons.lock_clock_outlined)
+                                        .copyWith(
                                       counterText: "",
                                       suffixIcon: TextButton(
                                         onPressed: () {
-                                          ApiService.sendOtp(email: emailController.text.trim());
+                                          ApiService.sendOtp(
+                                              email:
+                                                  emailController.text.trim());
                                           _showSnackBar("OTP resent");
                                         },
-                                        child: const Text("Resend", style: TextStyle(fontWeight: FontWeight.bold)),
+                                        child: const Text("Resend",
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.bold)),
                                       ),
                                     ),
-                                    validator: (v) => v!.isEmpty ? "Enter OTP" : null,
+                                    validator: (v) =>
+                                        v!.isEmpty ? "Enter OTP" : null,
                                   ),
                                 ],
-
                                 const SizedBox(height: 16),
                                 TextFormField(
                                   controller: passwordController,
                                   obscureText: true,
-                                  decoration: _modernInputStyle("Password", icon: Icons.lock_outline),
-                                  validator: (v) => v!.length < 6 ? "Min 6 characters" : null,
+                                  decoration: _modernInputStyle("Password",
+                                      icon: Icons.lock_outline),
+                                  validator: (v) =>
+                                      v!.length < 6 ? "Min 6 characters" : null,
                                 ),
                                 const SizedBox(height: 16),
-
                                 TextFormField(
                                   controller: phoneController,
                                   keyboardType: TextInputType.phone,
-                                  decoration: _modernInputStyle("Phone Number", icon: Icons.phone_outlined),
-                                  validator: (v) => v!.isEmpty ? "Enter phone" : null,
+                                  decoration: _modernInputStyle("Phone Number",
+                                      icon: Icons.phone_outlined),
+                                  validator: (v) =>
+                                      v!.isEmpty ? "Enter phone" : null,
                                 ),
                                 const SizedBox(height: 16),
-
                                 TextFormField(
                                   controller: additionalPhoneController,
                                   keyboardType: TextInputType.phone,
-                                  decoration: _modernInputStyle("Additional Phone", icon: Icons.phone_android_outlined),
+                                  decoration: _modernInputStyle(
+                                      "Additional Phone",
+                                      icon: Icons.phone_android_outlined),
                                 ),
                                 const SizedBox(height: 30),
-
                                 _buildSignUpButton(),
                               ],
                             ),
@@ -452,7 +480,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => const LoginScreen()),
+                              MaterialPageRoute(
+                                  builder: (context) => const LoginScreen()),
                             );
                           },
                           child: const Text(

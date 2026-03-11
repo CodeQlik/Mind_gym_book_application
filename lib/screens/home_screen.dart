@@ -18,7 +18,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedCategory = "All";
   final Map<String, List<BookModel>> _categoryBooks = {};
   final Map<String, bool> _categoryLoading = {};
-  final List<String> _categories = ["All", "Classics", "Fiction", "Technology", "History", "Science", "Business", "Health", "Romance"];
+  List<String> _categories = ["All"];
+  List<BookModel> _trendingBooks = [];
+  List<BookModel> _bestsellingBooks = [];
 
   @override
   void initState() {
@@ -27,25 +29,78 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    final categoriesToLoad = ["Classics", "Fiction", "Technology", "History"];
-    for (var cat in categoriesToLoad) {
-      _fetchBooksForCategory(cat);
-    }
+    // Fetch MindGym books (All) which will also populate categories
+    await _fetchBooksForCategory("All");
   }
 
   Future<void> _fetchBooksForCategory(String category) async {
-    if (_categoryBooks.containsKey(category) && _categoryBooks[category]!.isNotEmpty) return;
+    if (_categoryBooks.containsKey(category) &&
+        _categoryBooks[category]!.isNotEmpty) {
+      return;
+    }
 
     if (mounted) setState(() => _categoryLoading[category] = true);
 
     try {
-      List<BookModel> books;
-      if (category == "Classics") {
-        books = await ApiService.fetchGutenbergBooks();
+      List<BookModel> books = [];
+
+      if (category == "All") {
+        // Main source: MindGym API
+        books = await ApiService.fetchMindGymBooks(token: widget.user.token);
+
+        // Extract Categories dynamically and clean them
+        final Set<String> dynamicCategories = {};
+        for (var book in books) {
+          for (var c in book.categories) {
+            if (c.trim().isNotEmpty) {
+              dynamicCategories.add(c.trim());
+            }
+          }
+        }
+
+        // Populate specific category lists from the "All" data
+        for (var cat in dynamicCategories) {
+          final categoryBooks = books
+              .where((b) => b.categories
+                  .any((c) => c.trim().toLowerCase() == cat.toLowerCase()))
+              .toList();
+
+          _categoryBooks[cat] = categoryBooks;
+          _categoryLoading[cat] = false;
+        }
+
+        // Extract Trending and Bestselling
+        _trendingBooks = books.where((b) => b.isTrending).toList();
+        _bestsellingBooks = books.where((b) => b.isBestselling).toList();
+
+        // Sort categories alphabetically
+        final sortedCategories = dynamicCategories.toList()..sort();
+
+        if (mounted) {
+          setState(() {
+            _categories = ["All", ...sortedCategories];
+          });
+        }
       } else {
-        books = await ApiService.fetchBooks(category);
+        // Filter from "All" if available
+        if (_categoryBooks.containsKey("All") &&
+            _categoryBooks["All"]!.isNotEmpty) {
+          books = _categoryBooks["All"]!
+              .where((b) => b.categories
+                  .any((c) => c.trim().toLowerCase() == category.toLowerCase()))
+              .toList();
+        } else {
+          // Fallback if "All" isn't loaded yet, try loading "All" first
+          await _fetchBooksForCategory("All");
+          if (_categoryBooks.containsKey("All")) {
+            books = _categoryBooks["All"]!
+                .where((b) => b.categories.any(
+                    (c) => c.trim().toLowerCase() == category.toLowerCase()))
+                .toList();
+          }
+        }
       }
-      
+
       if (mounted) {
         setState(() {
           _categoryBooks[category] = books;
@@ -74,22 +129,33 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: theme.scaffoldBackgroundColor,
       body: SingleChildScrollView(
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + 20, 
-          bottom: 120
-        ),
+            top: MediaQuery.of(context).padding.top + 20, bottom: 120),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(theme),
             const SizedBox(height: 25),
-            _buildCategoryFilter(theme).animate().fadeIn(duration: 400.ms).slideX(begin: 0.2, end: 0),
+            _buildCategoryFilter(theme)
+                .animate()
+                .fadeIn(duration: 400.ms)
+                .slideX(begin: 0.2, end: 0),
             const SizedBox(height: 20),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 400),
               switchInCurve: Curves.easeOut,
               switchOutCurve: Curves.easeIn,
-              child: _selectedCategory == "All" 
-                  ? _buildAllCategoriesView(theme) 
+              child: _selectedCategory == "All"
+                  ? Column(
+                      children: [
+                        if (_trendingBooks.isNotEmpty)
+                          _buildHorizontalSection(
+                              "Trending Now", _trendingBooks, theme),
+                        if (_bestsellingBooks.isNotEmpty)
+                          _buildHorizontalSection(
+                              "Bestsellers", _bestsellingBooks, theme),
+                        _buildAllCategoriesView(theme),
+                      ],
+                    )
                   : _buildSingleCategoryGridView(theme),
             ),
           ],
@@ -101,10 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader(ThemeData theme) {
     return Padding(
       padding: EdgeInsets.only(
-        left: 20, 
-        right: 20, 
-        top: MediaQuery.of(context).padding.top + 50 
-      ),
+          left: 20, right: 20, top: MediaQuery.of(context).padding.top + 50),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -152,14 +215,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 1,
                 ),
                 boxShadow: isSelected
-                    ? [BoxShadow(color: theme.primaryColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                    ? [
+                        BoxShadow(
+                            color: theme.primaryColor.withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4))
+                      ]
                     : null,
               ),
               child: Center(
                 child: Text(
                   category,
                   style: TextStyle(
-                    color: isSelected ? Colors.white : theme.textTheme.bodyMedium?.color,
+                    color: isSelected
+                        ? Colors.white
+                        : theme.textTheme.bodyMedium?.color,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),
@@ -173,7 +243,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildAllCategoriesView(ThemeData theme) {
-    final categoriesToShow = ["Classics", "Fiction", "Technology", "History", "Science"];
+    // Show all valid categories (excluding 'All')
+    final categoriesToShow = _categories.where((c) => c != "All").toList();
+
+    if (categoriesToShow.isEmpty) {
+      // If no categories yet (loading or empty), shows loading or empty state
+      // We can return a loading indicator or just empty
+      return const SizedBox();
+    }
+
     return Column(
       key: const ValueKey("AllView"),
       children: categoriesToShow.asMap().entries.map((entry) {
@@ -230,7 +308,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildCategorySection(String category, ThemeData theme) {
     final books = _categoryBooks[category] ?? [];
-    final isLoading = _categoryLoading[category] ?? true;
+    return _buildHorizontalSection(category, books, theme);
+  }
+
+  Widget _buildHorizontalSection(
+      String title, List<BookModel> books, ThemeData theme) {
+    final isLoading =
+        _categoryLoading[_selectedCategory] ?? _categoryLoading["All"] ?? true;
 
     if (!isLoading && books.isEmpty) return const SizedBox.shrink();
 
@@ -243,26 +327,28 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                category,
-                style: theme.textTheme.titleLarge?.copyWith(fontSize: 18),
+                title,
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-              GestureDetector(
-                onTap: () => _onCategorySelected(category),
-                child: Text(
-                  "See All",
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.primaryColor,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
+              if (title != "Trending Now" && title != "Bestsellers")
+                GestureDetector(
+                  onTap: () => _onCategorySelected(title),
+                  child: Text(
+                    "See All",
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.primaryColor,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 200,
+          height: 220, // Increased height for price/badge
           child: isLoading
               ? _buildLoadingList(theme)
               : ListView.builder(
@@ -297,8 +383,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: Center(
             child: SizedBox(
-               width: 20, height: 20,
-               child: CircularProgressIndicator(color: theme.dividerColor, strokeWidth: 2),
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                  color: theme.dividerColor, strokeWidth: 2),
             ),
           ),
         );
@@ -354,6 +442,23 @@ class BookCard extends StatelessWidget {
                                   Container(color: theme.cardTheme.color),
                             )
                           : Container(color: theme.cardTheme.color),
+                      if (book.isPremium)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.amber,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.star_rounded,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -371,11 +476,18 @@ class BookCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 2),
-            Text(
-              book.authors.isNotEmpty ? book.authors.first : "Unknown",
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    book.authors.isNotEmpty ? book.authors.first : "Unknown",
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

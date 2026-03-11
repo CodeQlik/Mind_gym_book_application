@@ -1,12 +1,9 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
-import 'package:epub_view/epub_view.dart' hide Image;
-import 'package:image/image.dart' as img;
-import 'reading_screen.dart';
+import '../models/book_model.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
+import 'book_detail_screen.dart'; // Import for navigation
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -15,50 +12,298 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> {
-  List<FileSystemEntity> _books = [];
-  bool _isLoading = true;
+class _LibraryScreenState extends State<LibraryScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  // Bookmarks
+  List<BookModel> _bookmarkedBooks = [];
+  bool _isLoadingBookmarks = true;
 
   @override
   void initState() {
     super.initState();
-    _loadBooks();
+    _tabController = TabController(length: 2, vsync: this);
+    _loadBookmarks();
+
+    // Refresh bookmarks when switching to that tab
+    _tabController.addListener(() {
+      if (_tabController.index == 1 && !_tabController.indexIsChanging) {
+        _loadBookmarks();
+      }
+    });
   }
 
-  Future<void> _loadBooks() async {
-    setState(() => _isLoading = true);
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final List<FileSystemEntity> files = dir.listSync().where((file) {
-        return file.path.toLowerCase().endsWith('.epub');
-      }).toList();
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
-      if (mounted) {
-        setState(() {
-          _books = files;
-          _isLoading = false;
-        });
+  // Bookmarks Logic
+  Future<void> _loadBookmarks() async {
+    setState(() => _isLoadingBookmarks = true);
+    try {
+      final user = await AuthService.getUser();
+      if (user != null && user.token.isNotEmpty) {
+        final bookmarks = await ApiService.getBookmarks(user.token);
+        if (mounted) {
+          setState(() {
+            _bookmarkedBooks = bookmarks;
+            _isLoadingBookmarks = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isLoadingBookmarks = false);
       }
     } catch (e) {
-      debugPrint("Error loading books: $e");
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint("Error loading bookmarks: $e");
+      if (mounted) setState(() => _isLoadingBookmarks = false);
+    }
+  }
+
+  Future<void> _removeBookmark(String bookId) async {
+    try {
+      final user = await AuthService.getUser();
+      if (user != null) {
+        // Toggle off
+        await ApiService.toggleBookmark(bookId, user.token);
+        // Refresh list
+        _loadBookmarks();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Removed from bookmarks")),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error removing bookmark: $e")),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Calculate top padding to avoid overlap with MainScreen's floating top bar
+    // Standard status bar + roughly 60-80px for the floating bar
+    final topPadding = MediaQuery.of(context).padding.top + 80;
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: theme.primaryColor))
-          : _books.isEmpty
-              ? _buildEmptyState(theme)
-              : _buildBookList(theme),
+      body: Column(
+        children: [
+          SizedBox(height: topPadding),
+
+          // Tab Bar
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: theme.cardTheme.color,
+              borderRadius: BorderRadius.circular(25),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: theme.primaryColor,
+              unselectedLabelColor: Colors.grey,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: BoxDecoration(
+                color: theme.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(25),
+              ),
+              dividerColor: Colors.transparent,
+              labelStyle:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              padding: const EdgeInsets.all(4),
+              tabs: const [
+                Tab(text: "Subscribed"),
+                Tab(text: "Bookmarked"),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // 1. Subscribed (Placeholder)
+                _buildPlaceholderTab(theme, "No subscriptions yet",
+                    Icons.subscriptions_outlined),
+
+                // 2. Bookmarked
+                _buildBookmarksTab(theme),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildEmptyState(ThemeData theme) {
+  // ================= TAB 3: BOOKMARKS =================
+  Widget _buildBookmarksTab(ThemeData theme) {
+    if (_isLoadingBookmarks) {
+      return Center(
+          child: CircularProgressIndicator(color: theme.primaryColor));
+    }
+
+    if (_bookmarkedBooks.isEmpty) {
+      return _buildEmptyState(
+          theme, "No bookmarks yet", "Save books to read them later.");
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(
+          16, 16, 16, 100), // Added bottom padding for nav bar
+      itemCount: _bookmarkedBooks.length,
+      itemBuilder: (context, index) {
+        final book = _bookmarkedBooks[index];
+        return _buildBookmarkItem(theme, book, index);
+      },
+    );
+  }
+
+  Widget _buildBookmarkItem(ThemeData theme, BookModel book, int index) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12), // Reduced from 16
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BookDetailScreen(book: book),
+              ),
+            ).then((_) {
+              // Refresh on return in case bookmark status changed
+              _loadBookmarks();
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(8), // Reduced from 12
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Cover
+                Hero(
+                  tag: 'bookmark_cover_${book.id}',
+                  child: Container(
+                    width: 60, // Reduced from 70
+                    height: 85, // Reduced from 100
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey[300],
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2)),
+                      ],
+                      image: book.thumbnailUrl.isNotEmpty
+                          ? DecorationImage(
+                              image: NetworkImage(book.thumbnailUrl),
+                              fit: BoxFit.cover)
+                          : null,
+                    ),
+                    child: book.thumbnailUrl.isEmpty
+                        ? const Center(
+                            child: Icon(Icons.book, color: Colors.grey))
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        book.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2), // Reduced from 4
+                      Text(
+                        book.authors.join(", "),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8), // Reduced from 12
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "View Details",
+                            style: theme.textTheme.labelLarge
+                                ?.copyWith(color: theme.primaryColor),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.bookmark_remove,
+                                color: Colors.redAccent),
+                            onPressed: () => _removeBookmark(book.id),
+                            tooltip: "Remove Bookmark",
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      )
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).animate(delay: (50 * index).ms).fadeIn().slideY(begin: 0.1, end: 0);
+  }
+
+  // ================= HELPERS =================
+  Widget _buildPlaceholderTab(ThemeData theme, String title, IconData icon) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 60, color: theme.disabledColor),
+          const SizedBox(height: 16),
+          Text(title,
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(color: theme.disabledColor)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(ThemeData theme, String title, String subtitle) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -71,184 +316,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 color: theme.cardTheme.color,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                Icons.menu_book_rounded,
-                size: 60,
-                color: theme.disabledColor,
-              ),
+              child: Icon(Icons.menu_book_rounded,
+                  size: 60, color: theme.disabledColor),
             ),
             const SizedBox(height: 24),
-            Text(
-              "Your library is empty.",
-              style: theme.textTheme.titleLarge?.copyWith(fontSize: 18),
-            ),
+            Text(title,
+                style: theme.textTheme.titleLarge?.copyWith(fontSize: 18)),
             const SizedBox(height: 8),
             Text(
-              "Find your great book to read in the Home tab.",
+              subtitle,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                height: 1.5,
-              ),
+              style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
             ),
           ],
         ).animate().fadeIn(duration: 500.ms).scale(),
       ),
     );
-  }
-
-  Widget _buildBookList(ThemeData theme) {
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 140, bottom: 100, left: 16, right: 16),
-      itemCount: _books.length,
-      itemBuilder: (context, index) {
-        final File file = File(_books[index].path);
-        String filename = p.basename(file.path);
-        String title = filename.replaceAll('.epub', '').replaceAll('_', ' ');
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: theme.cardTheme.color,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ReadingScreen(
-                      url: file.path,
-                      title: title,
-                      isEpub: true,
-                    ),
-                  ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Book Cover
-                    Hero(
-                      tag: 'book_cover_${file.path}',
-                      child: Container(
-                        width: 70,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          color: theme.colorScheme.surfaceVariant, // slightly different for placeholder
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: FutureBuilder<List<int>?>(
-                          future: _fetchCover(file),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData && snapshot.data != null) {
-                              return Image.memory(
-                                Uint8List.fromList(snapshot.data!),
-                                fit: BoxFit.cover,
-                              );
-                            }
-                            return Container(
-                              color: theme.primaryColor,
-                              padding: const EdgeInsets.all(8),
-                              child: Center(
-                                child: Text(
-                                  title.isNotEmpty ? title[0].toUpperCase() : 'B',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 24,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Content
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text(
-                            title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              height: 1.3,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(Icons.offline_pin_rounded, size: 14, color: Colors.green.shade600),
-                              const SizedBox(width: 4),
-                              Text(
-                                "Downloaded",
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: Colors.green.shade600,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            "Tap to read",
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: theme.primaryColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ).animate(delay: (50 * index).ms).fadeIn().slideY(begin: 0.1, end: 0);
-      },
-    );
-  }
-
-  Future<List<int>?> _fetchCover(File file) async {
-    try {
-      final document = await EpubDocument.openFile(file);
-      final img.Image? cover = document.CoverImage;
-      if (cover != null) {
-        return img.encodePng(cover);
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
   }
 }

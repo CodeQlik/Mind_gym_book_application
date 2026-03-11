@@ -18,13 +18,21 @@ class AuthService {
   static Future<LoginModel?> getUser() async {
     final prefs = await SharedPreferences.getInstance();
     String? userJson = prefs.getString(_userKey);
-    if (userJson == null) return null;
+    if (userJson == null) {
+      debugPrint("AuthService: No user data found in SharedPreferences");
+      return null;
+    }
+
+    debugPrint("AuthService: Raw user data from prefs: $userJson");
 
     try {
       Map<String, dynamic> userMap = jsonDecode(userJson);
-      return LoginModel.fromJson(userMap);
+      final user = LoginModel.fromJson(userMap);
+      debugPrint(
+          "AuthService: Successfully parsed user: ${user.name}, Token length: ${user.token.length}");
+      return user;
     } catch (e) {
-      debugPrint("Error parsing user data: $e");
+      debugPrint("AuthService: Error parsing user data: $e");
       return null;
     }
   }

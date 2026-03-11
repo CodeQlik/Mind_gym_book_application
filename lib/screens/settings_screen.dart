@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../models/login_model.dart';
 import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import 'login_screen.dart';
+import '../services/theme_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   final LoginModel user;
@@ -21,7 +23,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    
+
     // Kindle style colors
     final backgroundColor = isDark ? Colors.black : Colors.white;
     final headerColor = isDark ? Colors.grey.shade400 : Colors.grey.shade700;
@@ -35,10 +37,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: backgroundColor,
         foregroundColor: theme.textTheme.bodyMedium?.color,
         elevation: 0,
-        leading: Container(), // Hide back button if using clear/close logic on right
+        leading:
+            Container(), // Hide back button if using clear/close logic on right
         actions: [
           IconButton(
-            icon: Icon(Icons.close, color: Colors.blueAccent),
+            icon: const Icon(Icons.close, color: Colors.blueAccent),
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -50,6 +53,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildNavItem(theme, "Push Notifications"),
           _buildNavItem(theme, "Manage Additional Fonts"),
 
+          // DISPLAY
+          _buildSectionHeader("DISPLAY", headerColor),
+          ValueListenableBuilder<ThemeMode>(
+            valueListenable: ThemeService.instance.themeMode,
+            builder: (context, mode, child) {
+              return _buildSwitchItem(
+                theme,
+                "Dark Mode",
+                "Toggle between light and dark themes",
+                mode == ThemeMode.dark,
+                (val) => ThemeService.instance.toggleTheme(val),
+                subTitleColor,
+                activeColor: Colors.blueAccent,
+              );
+            },
+          ),
 
           // DOWNLOAD AND SYNC
           _buildSectionHeader("DOWNLOAD AND SYNC", headerColor),
@@ -104,7 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 Text(
-                  "(${widget.user.name}'s Device)", 
+                  "(${widget.user.name}'s Device)",
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: subTitleColor,
                   ),
@@ -117,10 +136,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     side: BorderSide(color: subTitleColor),
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 12),
                   ),
                   child: Text(
-                    "Sign Out",
+                    "Log out",
                     style: TextStyle(
                       color: theme.textTheme.bodyMedium?.color,
                       fontSize: 16,
@@ -154,7 +174,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildNavItem(ThemeData theme, String title) {
     return ListTile(
       title: Text(title, style: theme.textTheme.bodyLarge),
-      trailing: Icon(Icons.chevron_right, color: Colors.grey.shade600, size: 20),
+      trailing:
+          Icon(Icons.chevron_right, color: Colors.grey.shade600, size: 20),
       onTap: () {},
     );
   }
@@ -184,7 +205,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _handleSignOut() async {
-    // Show confirmation dialog before signing out
     final shouldSignOut = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -204,8 +224,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (shouldSignOut == true) {
-      await AuthService.clearUser();
       if (mounted) {
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) =>
+              const Center(child: CircularProgressIndicator()),
+        );
+      }
+
+      // Call Logout API
+      await ApiService.logoutUser(widget.user.token);
+
+      // Clear local data
+      await AuthService.clearUser();
+
+      if (mounted) {
+        // Pop loading dialog
+        Navigator.pop(context);
+
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const LoginScreen()),
           (route) => false,

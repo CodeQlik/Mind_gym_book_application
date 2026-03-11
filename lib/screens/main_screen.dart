@@ -18,6 +18,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
+  final bool _hasNotifications = false; // Mock notification state
   late List<Widget> _pages;
 
   @override
@@ -62,7 +63,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
       ),
-      
+
       // Modern Custom Bottom Navigation
       bottomNavigationBar: _buildModernBottomNav(theme),
     );
@@ -71,8 +72,11 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildFloatingTopBar(BuildContext context, ThemeData theme) {
     // Determine glass color based on theme brightness
     final isDark = theme.brightness == Brightness.dark;
-    final glassColor = isDark ? const Color(0xFF1E1E1E).withOpacity(0.85) : Colors.white.withOpacity(0.85);
-    final borderColor = isDark ? Colors.white.withOpacity(0.1) : Colors.white.withOpacity(0.5);
+    final glassColor = isDark
+        ? const Color(0xFF1E1E1E).withOpacity(0.85)
+        : Colors.white.withOpacity(0.85);
+    final borderColor =
+        isDark ? Colors.white.withOpacity(0.1) : Colors.white.withOpacity(0.5);
     final searchBgColor = isDark ? Colors.grey.shade800 : Colors.grey.shade100;
     final hintColor = isDark ? Colors.grey.shade400 : Colors.grey.shade500;
     final iconColor = theme.iconTheme.color;
@@ -125,8 +129,8 @@ class _MainScreenState extends State<MainScreen> {
                       backgroundImage: widget.user.profile.url.isNotEmpty
                           ? NetworkImage(widget.user.profile.url)
                           : null,
-                      onBackgroundImageError: widget.user.profile.url.isNotEmpty 
-                          ? (_, __) {} 
+                      onBackgroundImageError: widget.user.profile.url.isNotEmpty
+                          ? (_, __) {}
                           : null,
                       child: widget.user.profile.url.isEmpty
                           ? Text(
@@ -150,7 +154,7 @@ class _MainScreenState extends State<MainScreen> {
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => SearchScreen()),
+                      MaterialPageRoute(builder: (context) => const SearchScreen()),
                     );
                   },
                   child: Container(
@@ -159,16 +163,19 @@ class _MainScreenState extends State<MainScreen> {
                       color: searchBgColor,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: AbsorbPointer( // Prevent keyboard from popping up
+                    child: AbsorbPointer(
+                      // Prevent keyboard from popping up
                       child: TextField(
                         enabled: false, // Visual only
                         decoration: InputDecoration(
                           hintText: "Search books...",
                           hintStyle: TextStyle(color: hintColor, fontSize: 14),
-                          prefixIcon: Icon(Icons.search_rounded, color: hintColor, size: 20),
+                          prefixIcon: Icon(Icons.search_rounded,
+                              color: hintColor, size: 20),
                           //suffixIcon: Icon(Icons.mic_none_rounded, color: theme.primaryColor, size: 20),
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 15, vertical: 10),
                           isDense: true,
                         ),
                       ),
@@ -183,31 +190,37 @@ class _MainScreenState extends State<MainScreen> {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const NotificationScreen()),
+                    MaterialPageRoute(
+                        builder: (context) => const NotificationScreen()),
                   );
                 },
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: const BoxDecoration(
-                    color: Colors.transparent, 
+                    color: Colors.transparent,
                     shape: BoxShape.circle,
                   ),
                   child: Stack(
                     children: [
-                      Icon(Icons.notifications_outlined, color: iconColor, size: 26),
-                      Positioned(
-                        right: 2,
-                        top: 2,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF5252),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: theme.appBarTheme.backgroundColor ?? Colors.white, width: 1.5),
+                      Icon(Icons.notifications_outlined,
+                          color: iconColor, size: 26),
+                      if (_hasNotifications)
+                        Positioned(
+                          right: 2,
+                          top: 2,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF5252),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: theme.appBarTheme.backgroundColor ??
+                                      Colors.white,
+                                  width: 1.5),
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -221,12 +234,15 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildModernBottomNav(ThemeData theme) {
     final isDark = theme.brightness == Brightness.dark;
-    final navBgColor = isDark ? const Color(0xFF1E1E1E).withOpacity(0.95) : Colors.white.withOpacity(0.95);
+    final navBgColor = isDark
+        ? const Color(0xFF1E1E1E).withOpacity(0.95)
+        : Colors.white.withOpacity(0.95);
 
     return Container(
       color: Colors.transparent, // Make outer container transparent
       padding: const EdgeInsets.only(left: 20, right: 20, bottom: 20, top: 0),
-      child: SafeArea( // SafeArea ensures it respects bottom notches
+      child: SafeArea(
+        // SafeArea ensures it respects bottom notches
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           decoration: BoxDecoration(
@@ -253,10 +269,13 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, String label, ThemeData theme) {
+  Widget _buildNavItem(
+      int index, IconData icon, String label, ThemeData theme) {
     bool isSelected = _selectedIndex == index;
-    final unselectedColor = theme.brightness == Brightness.dark ? Colors.grey.shade600 : Colors.grey.shade400;
-    
+    final unselectedColor = theme.brightness == Brightness.dark
+        ? Colors.grey.shade600
+        : Colors.grey.shade400;
+
     return GestureDetector(
       onTap: () => _onItemTapped(index),
       child: AnimatedContainer(
