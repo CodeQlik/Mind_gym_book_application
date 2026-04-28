@@ -12,30 +12,6 @@ class MoreScreen extends StatefulWidget {
 }
 
 class _MoreScreenState extends State<MoreScreen> {
-  String _lastSyncedTime =
-      "2/8/26, 5:42 PM"; // Placeholder, can be dynamic later
-
-  @override
-  void initState() {
-    super.initState();
-    // Simulate updating sync time on init or use a real service
-    _updateSyncTime();
-  }
-
-  void _updateSyncTime() {
-    final now = DateTime.now();
-    // Simple formatting for demo: MO/DAY/YR, H:MM AM/PM
-    // In a real app, use intl package
-    final hour =
-        now.hour > 12 ? now.hour - 12 : (now.hour == 0 ? 12 : now.hour);
-    final amPm = now.hour >= 12 ? 'PM' : 'AM';
-    final minute = now.minute.toString().padLeft(2, '0');
-    setState(() {
-      _lastSyncedTime =
-          "${now.month}/${now.day}/${now.year % 100}, $hour:$minute $amPm";
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -55,7 +31,6 @@ class _MoreScreenState extends State<MoreScreen> {
               height: 32,
               thickness: 0.5,
               color: theme.dividerColor.withOpacity(0.3)),
-          _buildSyncItem(theme),
           _buildMenuItem(theme, "Settings", Icons.settings_outlined),
           _buildMenuItem(theme, "Help & Feedback", Icons.help_outline),
         ],
@@ -106,44 +81,6 @@ class _MoreScreenState extends State<MoreScreen> {
             ),
           );
         }
-      },
-    );
-  }
-
-  Widget _buildSyncItem(ThemeData theme) {
-    return ListTile(
-      leading: Icon(Icons.sync, color: theme.iconTheme.color, size: 24),
-      title: Text(
-        "Sync",
-        style: theme.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: Text(
-        "Last synced on $_lastSyncedTime",
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.disabledColor,
-        ),
-      ),
-      onTap: () {
-        // Trigger generic sync animation/logic
-        setState(() {
-          _updateSyncTime();
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text("Syncing content..."),
-            backgroundColor: theme.cardColor,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            /*action: SnackBarAction(
-              label: 'Undo',
-              textColor: theme.primaryColor,
-              onPressed: () {},
-            ),*/
-          ),
-        );
       },
     );
   }

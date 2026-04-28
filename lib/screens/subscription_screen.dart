@@ -7,6 +7,10 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../utils/constants.dart';
 import '../models/login_model.dart';
+import '../models/subscription_plan_model.dart';
+import '../utils/app_toasts.dart';
+
+enum PlanTier { silver, gold, diamond, unknown }
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
@@ -15,15 +19,15 @@ class SubscriptionScreen extends StatefulWidget {
   State<SubscriptionScreen> createState() => _SubscriptionScreenState();
 }
 
-class _SubscriptionScreenState extends State<SubscriptionScreen>
-    with TickerProviderStateMixin {
+class _SubscriptionScreenState extends State<SubscriptionScreen> with TickerProviderStateMixin {
   late Razorpay _razorpay;
   bool _isLoading = false;
+  bool _isFetchingPlans = true;
   String? _selectedPlan;
+  List<SubscriptionPlanModel> _plans = [];
 
-  // Background animation controllers
-  late AnimationController _bgController1;
-  late AnimationController _bgController2;
+  // Controllers for background mesh animation
+  late AnimationController _meshController;
 
   @override
   void initState() {
@@ -33,19 +37,30 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
 
-    _bgController1 =
-        AnimationController(vsync: this, duration: const Duration(seconds: 10))
-          ..repeat(reverse: true);
-    _bgController2 =
-        AnimationController(vsync: this, duration: const Duration(seconds: 15))
-          ..repeat(reverse: true);
+    _meshController = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
+
+    _fetchPlans();
+  }
+
+  Future<void> _fetchPlans() async {
+    try {
+      final plans = await ApiService.getSubscriptionPlans();
+      if (mounted) {
+        setState(() {
+          _plans = plans;
+          _isFetchingPlans = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching plans: $e");
+      if (mounted) setState(() => _isFetchingPlans = false);
+    }
   }
 
   @override
   void dispose() {
     _razorpay.clear();
-    _bgController1.dispose();
-    _bgController2.dispose();
+    _meshController.dispose();
     super.dispose();
   }
 
@@ -56,61 +71,35 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     });
 
     try {
-      debugPrint("Subscription: Fetching user details...");
       final user = await AuthService.getUser();
-      if (user == null || user.token.isEmpty) {
-        throw Exception("Please login to continue");
-      }
+      if (user == null || user.token.isEmpty) throw Exception("Please login to continue");
 
-      debugPrint(
-          "Subscription: Requesting order from server for plan: $planType...");
-      final orderData = await ApiService.createSubscriptionOrder(
-        token: user.token,
-        planType: planType,
-      );
+      final orderData = await ApiService.createSubscriptionOrder(token: user.token, planType: planType);
 
       if (orderData != null) {
         final Map<String, dynamic>? razorpayOrder = orderData['razorpay_order'];
         final Map<String, dynamic>? planData = orderData['plan'];
-
-        if (razorpayOrder == null || razorpayOrder['id'] == null) {
-          throw Exception("Invalid order data received from server");
-        }
+        if (razorpayOrder == null || razorpayOrder['id'] == null) throw Exception("Invalid order data");
 
         var options = {
           'key': Constants.razorpayKeyId,
-          'amount': razorpayOrder['amount'], // Amount in paise
+          'amount': razorpayOrder['amount'],
           'name': 'MindGym Book',
           'order_id': razorpayOrder['id'],
-          'description':
-              'Premium Subscription: ${planData?['name'] ?? planType}',
+          'description': 'Premium Subscription: ${planData?['name'] ?? planType}',
           'timeout': 300,
           'prefill': {
-            'contact': (user.phone.isNotEmpty) ? user.phone : '',
-            'email': (user.email.isNotEmpty) ? user.email : '',
+            'contact': user.phone,
+            'email': user.email,
             'name': user.name,
           },
-          'external': {
-            'wallets': ['paytm']
-          },
-          'theme': {
-            'color': '#F59E0B' // Matches the Gold accent
-          }
+          'theme': {'color': '#FFD700'}
         };
-
-        debugPrint("Subscription: Launching Razorpay gateway...");
         _razorpay.open(options);
       }
     } catch (e) {
-      debugPrint("Subscription Error: $e");
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().replaceAll("Exception: ", "")),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppToasts.error(context, e.toString().replaceAll("Exception: ", ""));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -122,42 +111,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     try {
       final user = await AuthService.getUser();
       if (user == null) return;
-
-      debugPrint("Subscription: Verifying payment on server...");
       final success = await ApiService.verifySubscriptionPayment(
         token: user.token,
         razorpayOrderId: response.orderId!,
         razorpayPaymentId: response.paymentId!,
         razorpaySignature: response.signature!,
       );
-
       if (success) {
-        debugPrint(
-            "Subscription: Payment verified. Refreshing user profile...");
-        final LoginModel freshProfile =
-            await ApiService.getUserProfile(user.token);
+        final LoginModel freshProfile = await ApiService.getUserProfile(user.token);
         await AuthService.saveUser(freshProfile);
-
-        if (mounted) {
-          _showSuccessDialog();
-        }
-      } else {
-        throw Exception("Server verification failed. Please contact support.");
+        if (mounted) _showSuccessDialog();
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Verification Error: $e"),
-            backgroundColor: Colors.redAccent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      if (mounted) AppToasts.error(context, "Verification Error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    if (mounted) AppToasts.error(context, "Payment failed");
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {}
 
   void _showSuccessDialog() {
     showDialog(
@@ -166,83 +142,25 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
       builder: (context) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: AlertDialog(
-          backgroundColor: const Color(0xFF1E1E2C),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
-          contentPadding: const EdgeInsets.all(32),
+          backgroundColor: const Color(0xFF0F0F1A),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFBBF24).withOpacity(0.15),
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                        color: const Color(0xFFFBBF24).withOpacity(0.3),
-                        blurRadius: 40,
-                        spreadRadius: 10)
-                  ],
-                ),
-                child: const Icon(Icons.workspace_premium_rounded,
-                    color: Color(0xFFFBBF24), size: 70),
-              ).animate().scale(
-                  duration: 600.ms, curve: Curves.easeOutBack, delay: 200.ms),
+              const Icon(Icons.stars_rounded, color: Color(0xFFFBBF24), size: 70).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
+              const SizedBox(height: 24),
+              const Text("Welcome to Elite!", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+              const SizedBox(height: 12),
+              const Text("You've unlocked the full potential of your mind.", textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
               const SizedBox(height: 32),
-              const Text(
-                "Welcome to Premium!",
-                style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white),
-              ).animate().fadeIn(delay: 400.ms),
-              const SizedBox(height: 16),
-              Text(
-                "Your subscription is now active. You have unlimited access to our entire library of books and summaries.",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: 15,
-                    height: 1.5),
-              ).animate().fadeIn(delay: 500.ms),
-              const SizedBox(height: 40),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFBBF24), Color(0xFFF59E0B)],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFFBBF24).withOpacity(0.4),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop(true);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
-                    ),
-                    child: const Text("Start Reading",
-                        style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87)),
-                  ),
-                ),
-              ).animate().fadeIn(delay: 600.ms).slideY(begin: 0.2, end: 0),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context, true);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFBBF24), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                child: const Text("Start Reading", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+              ),
             ],
           ),
         ),
@@ -250,547 +168,365 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
     );
   }
 
-  void _handlePaymentError(PaymentFailureResponse response) {
-    debugPrint(
-        "Razorpay Payment Error: ${response.code} - ${response.message}");
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Payment failed or cancelled"),
-          backgroundColor: Colors.redAccent,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
-  void _handleExternalWallet(ExternalWalletResponse response) {
-    debugPrint("External wallet selected: ${response.walletName}");
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F1A), // Deep dark background
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      backgroundColor: const Color(0xFF0F0F1A),
       body: Stack(
         children: [
-          // Animated Background Glowing Orbs
-          AnimatedBuilder(
-            animation: _bgController1,
-            builder: (context, child) {
-              return Positioned(
-                top: -100 + (math.sin(_bgController1.value * math.pi * 2) * 50),
-                left: -50 + (math.cos(_bgController1.value * math.pi) * 50),
-                child: Container(
-                  width: 350,
-                  height: 350,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF4338CA).withOpacity(0.4),
-                  ),
-                ),
-              );
-            },
-          ),
-          AnimatedBuilder(
-            animation: _bgController2,
-            builder: (context, child) {
-              return Positioned(
-                bottom:
-                    -150 + (math.cos(_bgController2.value * math.pi * 2) * 80),
-                right: -100 + (math.sin(_bgController2.value * math.pi) * 80),
-                child: Container(
-                  width: 400,
-                  height: 400,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF8B5CF6).withOpacity(0.25),
-                  ),
-                ),
-              );
-            },
-          ),
+          // 1. ELITE MESH BACKGROUND
+          _buildEliteMeshBackground(),
 
-          // Massive Blur Overlay to create Glassmorphism background
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
-              child: Container(
-                color: Colors.transparent,
-              ),
-            ),
-          ),
-
-          // Main Content
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               physics: const BouncingScrollPhysics(),
               child: Column(
                 children: [
-                  // App Icon / Crown
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: Colors.white.withOpacity(0.1), width: 1),
-                    ),
-                    child: const Icon(
-                      Icons.workspace_premium_rounded,
-                      color: Color(0xFFFBBF24),
-                      size: 52,
-                    ),
-                  )
-                      .animate()
-                      .scale(
-                          duration: 800.ms,
-                          curve: Curves.easeOutBack,
-                          delay: 100.ms)
-                      .shimmer(
-                          color: Colors.white54,
-                          duration: 2000.ms,
-                          delay: 1000.ms),
-
-                  const SizedBox(height: 24),
-
-                  // Title
-                  const Text(
-                    "Upgrade to Premium",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      height: 1.1,
-                      letterSpacing: -0.5,
-                    ),
-                  )
-                      .animate()
-                      .fadeIn(duration: 600.ms)
-                      .slideY(begin: 0.1, end: 0),
-
-                  const SizedBox(height: 12),
-
-                  // Subtitle
-                  Text(
-                    "Unlock infinite wisdom. Get full access to audiobooks, exclusive summaries, and daily insights.",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w400,
-                      height: 1.5,
-                    ),
-                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1, end: 0),
-
-                  const SizedBox(height: 40),
-
-                  // Monthly Plan
-                  _buildPlanCard(
-                    title: "Silver Monthly",
-                    price: "199",
-                    period: "month",
-                    subtitle: "Cancel anytime",
-                    features: [
-                      "Unlimited reading access",
-                      "Ad-free listening",
-                      "Offline downloads",
+                  const SizedBox(height: 20),
+                  // Majestic Pulsing Crown
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(color: const Color(0xFFFBBF24).withOpacity(0.2), blurRadius: 40, spreadRadius: 10)
+                          ],
+                        ),
+                      ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(0.8, 0.8), end: const Offset(1.2, 1.2), duration: 2.seconds),
+                      const Icon(Icons.workspace_premium_rounded, color: Color(0xFFFBBF24), size: 60)
+                        .animate(onPlay: (c) => c.repeat())
+                        .shimmer(color: Colors.white, duration: 2.seconds)
+                        .scale(begin: const Offset(1, 1), end: const Offset(1.05, 1.05), duration: 1.seconds, curve: Curves.easeInOut),
                     ],
-                    planType: "one_month",
-                    isRecommended: false,
-                  ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.1, end: 0),
-
-                  const SizedBox(height: 24),
-
-                  // Yearly Plan
-                  _buildPlanCard(
-                    title: "Gold Yearly",
-                    price: "699",
-                    period: "year",
-                    subtitle: "Save 70%",
-                    features: [
-                      "Everything in Monthly",
-                      "Early access to new books",
-                      "Premium personalized insights",
-                    ],
-                    planType: "one_year",
-                    isRecommended: true,
-                  ).animate().fadeIn(delay: 400.ms).slideX(begin: 0.1, end: 0),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  const Text("Join the Elite", style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -1)),
+                  const SizedBox(height: 4),
+                  Text("Unlock every word, every lesson.", style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14)),
+                  
+                  const SizedBox(height: 32),
+                  
+                  // 2. FEATURE TICKET GRID (Ads and Offline Removed)
+                  _buildFeatureGrid(),
 
                   const SizedBox(height: 32),
 
-                  // Footer text
+                  // Plans Heading
                   Row(
+                    children: [
+                      Container(width: 4, height: 20, decoration: BoxDecoration(color: const Color(0xFFFBBF24), borderRadius: BorderRadius.circular(2))),
+                      const SizedBox(width: 12),
+                      const Text("Select Your Pass", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  if (_isFetchingPlans)
+                    const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Color(0xFFFBBF24)))
+                  else if (_plans.isEmpty)
+                   const Text("No Plans Available", style: TextStyle(color: Colors.white))
+                  else
+                    ..._plans.map((plan) {
+                      bool isRecommended = plan.planType == 'one_year';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 20),
+                        child: _buildElitePlanCard(plan, isRecommended),
+                      );
+                    }),
+                  
+                  const SizedBox(height: 30),
+                  const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.lock_outline_rounded,
-                          color: Colors.white.withOpacity(0.4), size: 16),
-                      const SizedBox(width: 8),
-                      Text(
-                        "Secured by Razorpay",
-                        style: TextStyle(
-                            color: Colors.white.withOpacity(0.4),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500),
-                      ),
+                      Icon(Icons.verified_user_rounded, color: Colors.white12, size: 14),
+                      SizedBox(width: 8),
+                      Text("Secured by Razorpay", style: TextStyle(color: Colors.white12, fontSize: 12)),
                     ],
-                  ).animate().fadeIn(delay: 600.ms),
-
-                  const SizedBox(height: 40),
+                  ),
+                  const SizedBox(height: 60),
                 ],
               ),
             ),
           ),
-
-          // Loading Overlay
-          if (_isLoading)
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                child: Container(
-                  color: Colors.black.withOpacity(0.4),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 32, vertical: 24),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E1E2C),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                              color: Colors.black.withOpacity(0.5),
-                              blurRadius: 30,
-                              offset: const Offset(0, 10))
-                        ],
-                      ),
-                      child: const Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(
-                              color: Color(0xFFFBBF24)),
-                          SizedBox(height: 24),
-                          Text(
-                            "Processing secure payment...",
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16),
-                          )
-                        ],
-                      ),
-                    ).animate().scale(duration: 400.ms, curve: Curves.easeOut),
-                  ),
-                ),
+          
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 20,
+            child: InkWell(
+              onTap: () => Navigator.pop(context),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.1))),
+                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
               ),
             ),
+          ),
+
+          if (_isLoading) _buildLoadingOverlay(),
         ],
       ),
     );
   }
 
-  Widget _buildPlanCard({
-    required String title,
-    required String price,
-    required String period,
-    required String subtitle,
-    required List<String> features,
-    required String planType,
-    required bool isRecommended,
-  }) {
-    // Colors based on whether it's the recommended plan
-    final Color accentColor =
-        isRecommended ? const Color(0xFFFBBF24) : Colors.white;
-    final List<Color> borderGradient = isRecommended
-        ? [const Color(0xFFFBBF24), const Color(0xFFF59E0B).withOpacity(0.2)]
-        : [Colors.white.withOpacity(0.3), Colors.white.withOpacity(0.05)];
-
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        // Main Card Container
-        Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(32),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white.withOpacity(0.08),
-                Colors.white.withOpacity(0.03),
-              ],
+  Widget _buildEliteMeshBackground() {
+    return AnimatedBuilder(
+      animation: _meshController,
+      builder: (context, child) {
+        return Stack(
+          children: [
+            Container(color: const Color(0xFF080810)),
+            Positioned(
+              top: -200 + (math.sin(_meshController.value * 2 * math.pi) * 150),
+              right: -100 + (math.cos(_meshController.value * math.pi) * 100),
+              child: _BlurBall(color: Colors.amber.withOpacity(0.15), size: 600),
             ),
+            Positioned(
+              bottom: -150 + (math.cos(_meshController.value * 2 * math.pi) * 120),
+              left: -150 + (math.sin(_meshController.value * math.pi) * 120),
+              child: _BlurBall(color: Colors.deepPurple.withOpacity(0.3), size: 700),
+            ),
+            Positioned.fill(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100), child: Container(color: Colors.transparent))),
+          ],
+        );
+      },
+    );
+  }
+
+  PlanTier _getTier(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('diamond')) return PlanTier.diamond;
+    if (lower.contains('gold')) return PlanTier.gold;
+    if (lower.contains('silver')) return PlanTier.silver;
+    return PlanTier.unknown;
+  }
+
+  Widget _buildFeatureGrid() {
+    final features = [
+      {'icon': Icons.headphones_rounded, 'title': 'Audio Library'},
+      {'icon': Icons.auto_awesome_rounded, 'title': 'Elite Insights'},
+    ];
+
+    return Wrap(
+      spacing: 16,
+      runSpacing: 16,
+      children: features.map((f) {
+        return Container(
+          width: (MediaQuery.of(context).size.width - 64) / 2,
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.05)),
           ),
-          child: CustomPaint(
-            painter: _GradientBorderPainter(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: borderGradient,
-                ),
-                borderRadius: 32,
-                strokeWidth: isRecommended ? 2.0 : 1.0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(32),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Plan Title & Subtitle
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
+            children: [
+              Icon(f['icon'] as IconData, color: const Color(0xFFFBBF24).withOpacity(0.8), size: 28),
+              const SizedBox(height: 10),
+              Text(f['title'] as String, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600), textAlign: TextAlign.center),
+            ],
+          ),
+        ).animate().fadeIn(delay: (features.indexOf(f) * 100).ms);
+      }).toList(),
+    );
+  }
+
+  Widget _buildElitePlanCard(SubscriptionPlanModel plan, bool isRecommended) {
+    final tier = _getTier(plan.name);
+    
+    // Tier-specific styles
+    Color mainColor;
+    Color secondaryColor;
+    IconData tierIcon;
+    String badgeText = "";
+
+    switch (tier) {
+      case PlanTier.silver:
+        mainColor = const Color(0xFFB0B0C0); // Metallic Silver
+        secondaryColor = Colors.white70;
+        tierIcon = Icons.workspace_premium_outlined;
+        break;
+      case PlanTier.gold:
+        mainColor = const Color(0xFFFBBF24); // Solid Gold
+        secondaryColor = Colors.orangeAccent;
+        tierIcon = Icons.stars_rounded;
+        badgeText = "MOST POPULAR";
+        break;
+      case PlanTier.diamond:
+        mainColor = const Color(0xFF0EA5E9); // Bright Diamond Cyan
+        secondaryColor = const Color(0xFFB9F2FF);
+        tierIcon = Icons.diamond_rounded;
+        badgeText = "BEST VALUE";
+        break;
+      default:
+        mainColor = Colors.white;
+        secondaryColor = Colors.white54;
+        tierIcon = Icons.check_circle_outline;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: mainColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: mainColor.withOpacity(0.3), width: isRecommended ? 2 : 1),
+        boxShadow: [
+          if (isRecommended)
+            BoxShadow(
+              color: mainColor.withOpacity(0.15),
+              blurRadius: 20,
+              spreadRadius: -5,
+            )
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: Column(
+              children: [
+                if (badgeText.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [mainColor, secondaryColor]),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      badgeText,
+                      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 10, letterSpacing: 1.5),
+                    ),
+                  ).animate(onPlay: (c) => c.repeat()).shimmer(duration: 2.seconds),
+                
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: mainColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(tierIcon, color: mainColor, size: 32),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  title,
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    color: isRecommended
-                                        ? accentColor
-                                        : Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  subtitle,
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.6),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          Text(
+                            plan.name.toUpperCase(),
+                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5),
                           ),
-                          // Price
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              const Text(
-                                "₹",
-                                style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white),
-                              ),
-                              Text(
-                                price,
-                                style: const TextStyle(
-                                    fontSize: 38,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                    letterSpacing: -1),
-                              ),
-                              Text(
-                                "/$period",
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.white.withOpacity(0.6)),
-                              ),
-                            ],
+                          Text(
+                            "${plan.durationMonths} Months Duration",
+                            style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12, fontWeight: FontWeight.w500),
                           ),
                         ],
                       ),
-
-                      const SizedBox(height: 28),
-                      Container(
-                        height: 1,
-                        width: double.infinity,
-                        color: Colors.white.withOpacity(0.1),
-                      ),
-                      const SizedBox(height: 28),
-
-                      // Features List
-                      ...features.map((f) => Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: accentColor.withOpacity(0.2),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    Icons.check_rounded,
-                                    color: accentColor,
-                                    size: 16,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Text(
-                                    f,
-                                    style: TextStyle(
-                                        color: Colors.white.withOpacity(0.9),
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w500),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )),
-
-                      const SizedBox(height: 16),
-
-                      // Action Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 60,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          decoration: BoxDecoration(
-                            gradient: isRecommended
-                                ? const LinearGradient(
-                                    colors: [
-                                      Color(0xFFFBBF24),
-                                      Color(0xFFF59E0B)
-                                    ],
-                                  )
-                                : null,
-                            color: isRecommended
-                                ? null
-                                : Colors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: isRecommended
-                                ? [
-                                    BoxShadow(
-                                      color: const Color(0xFFFBBF24)
-                                          .withOpacity(0.3),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 8),
-                                    )
-                                  ]
-                                : [],
-                          ),
-                          child: ElevatedButton(
-                            onPressed: _isLoading
-                                ? null
-                                : () => _startSubscription(planType),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                            ),
-                            child: Text(
-                              _selectedPlan == planType && _isLoading
-                                  ? "Connecting..."
-                                  : "Get $title",
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: isRecommended
-                                    ? Colors.black87
-                                    : Colors.white,
-                              ),
-                            ),
-                          ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          "₹${plan.price.split('.').first}",
+                          style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: Colors.white),
                         ),
+                        Text(
+                          "Total Price",
+                          style: TextStyle(color: mainColor.withOpacity(0.6), fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 28),
+                
+                // Tier Description
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.03),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: plan.features.take(3).map((f) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle_rounded, color: mainColor.withOpacity(0.8), size: 16),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(f, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13, height: 1.4))),
+                        ],
                       ),
-                    ],
+                    )).toList(),
                   ),
                 ),
-              ),
+
+                const SizedBox(height: 28),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: () => _startSubscription(plan.planType),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: mainColor,
+                      foregroundColor: Colors.black87,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      elevation: 8,
+                      shadowColor: mainColor.withOpacity(0.4),
+                    ),
+                    child: Text(
+                      _isLoading && _selectedPlan == plan.planType 
+                          ? "SECURING CONNECTION..." 
+                          : "SELECT ${plan.name.toUpperCase()}", 
+                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1),
+                    ),
+                  ),
+                ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(1, 1), end: const Offset(1.02, 1.02), duration: 2.seconds, curve: Curves.easeInOut),
+              ],
             ),
           ),
         ),
+      ),
+    ).animate().fadeIn(duration: 800.ms).slideY(begin: 0.1, end: 0);
+  }
 
-        // Floating Recommended Badge
-        if (isRecommended)
-          Positioned(
-            top: -15,
-            right: 32,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFBBF24), Color(0xFFB45309)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                      color: const Color(0xFFB45309).withOpacity(0.4),
-                      blurRadius: 10,
-                      offset: const Offset(0, 5))
-                ],
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.local_fire_department_rounded,
-                      color: Colors.white, size: 14),
-                  SizedBox(width: 4),
-                  Text(
-                    "BEST VALUE",
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1),
-                  ),
-                ],
-              ),
-            ),
-          )
-              .animate(onPlay: (controller) => controller.repeat(reverse: true))
-              .moveY(begin: -3, end: 3, duration: 2.seconds),
-      ],
+  Widget _buildLoadingOverlay() {
+    return Container(
+      color: Colors.black.withOpacity(0.8),
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Color(0xFFFBBF24)),
+            SizedBox(height: 24),
+            Text("Processing securely...", style: TextStyle(color: Colors.white60, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
     );
   }
 }
 
-// Custom Painter for Gradient Borders around Glassmorphic containers
-class _GradientBorderPainter extends CustomPainter {
-  final Gradient gradient;
-  final double borderRadius;
-  final double strokeWidth;
-
-  _GradientBorderPainter({
-    required this.gradient,
-    required this.borderRadius,
-    required this.strokeWidth,
-  });
+class _BlurBall extends StatelessWidget {
+  final Color color;
+  final double size;
+  const _BlurBall({required this.color, required this.size});
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final Rect rect = Rect.fromLTWH(strokeWidth / 2, strokeWidth / 2,
-        size.width - strokeWidth, size.height - strokeWidth);
-    final RRect rRect =
-        RRect.fromRectAndRadius(rect, Radius.circular(borderRadius));
-
-    final Paint paint = Paint()
-      ..shader = gradient.createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth;
-
-    canvas.drawRRect(rRect, paint);
+  Widget build(BuildContext context) {
+    return Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, color: color));
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

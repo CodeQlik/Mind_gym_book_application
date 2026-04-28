@@ -8,13 +8,14 @@ import 'book_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final LoginModel user;
-  const HomeScreen({super.key, required this.user});
+  final VoidCallback? onRefresh;
+  const HomeScreen({super.key, required this.user, this.onRefresh});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  HomeScreenState createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   String _selectedCategory = "All";
   final Map<String, List<BookModel>> _categoryBooks = {};
   final Map<String, bool> _categoryLoading = {};
@@ -25,10 +26,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    loadInitialData();
   }
 
-  Future<void> _loadInitialData() async {
+  Future<void> loadInitialData() async {
     // Fetch MindGym books (All) which will also populate categories
     await _fetchBooksForCategory("All");
   }
@@ -115,6 +116,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      return "Good Morning";
+    } else if (hour < 17) {
+      return "Good Afternoon";
+    } else {
+      return "Good Evening";
+    }
+  }
+
   void _onCategorySelected(String category) {
     if (_selectedCategory == category) return;
     HapticFeedback.lightImpact();
@@ -127,38 +139,48 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: SingleChildScrollView(
-        padding: EdgeInsets.only(
-            top: MediaQuery.of(context).padding.top + 20, bottom: 120),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(theme),
-            const SizedBox(height: 25),
-            _buildCategoryFilter(theme)
-                .animate()
-                .fadeIn(duration: 400.ms)
-                .slideX(begin: 0.2, end: 0),
-            const SizedBox(height: 20),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 400),
-              switchInCurve: Curves.easeOut,
-              switchOutCurve: Curves.easeIn,
-              child: _selectedCategory == "All"
-                  ? Column(
-                      children: [
-                        if (_trendingBooks.isNotEmpty)
-                          _buildHorizontalSection(
-                              "Trending Now", _trendingBooks, theme),
-                        if (_bestsellingBooks.isNotEmpty)
-                          _buildHorizontalSection(
-                              "Bestsellers", _bestsellingBooks, theme),
-                        _buildAllCategoriesView(theme),
-                      ],
-                    )
-                  : _buildSingleCategoryGridView(theme),
-            ),
-          ],
+      body: RefreshIndicator(
+        onRefresh: () async {
+          _categoryBooks.clear();
+          await loadInitialData();
+          widget.onRefresh?.call();
+        },
+        displacement: 100,
+        color: theme.primaryColor,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(), // Important for pull-to-refresh
+          padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 20, bottom: 120),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(theme),
+              const SizedBox(height: 25),
+              _buildCategoryFilter(theme)
+                  .animate()
+                  .fadeIn(duration: 400.ms)
+                  .slideX(begin: 0.2, end: 0),
+              const SizedBox(height: 20),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: _selectedCategory == "All"
+                    ? Column(
+                        children: [
+                          if (_trendingBooks.isNotEmpty)
+                            _buildHorizontalSection(
+                                "Trending Now", _trendingBooks, theme),
+                          if (_bestsellingBooks.isNotEmpty)
+                            _buildHorizontalSection(
+                                "Bestsellers", _bestsellingBooks, theme),
+                          _buildAllCategoriesView(theme),
+                        ],
+                      )
+                    : _buildSingleCategoryGridView(theme),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -172,19 +194,32 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Good Morning,",
+            "${_getGreeting()},",
             style: theme.textTheme.bodyMedium?.copyWith(
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            "${widget.user.name.split(' ')[0]} 👋",
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+          Row(
+            children: [
+              Text(
+                "${widget.user.name.split(' ')[0]}",
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                "👋",
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontSize: 24,
+                ),
+              )
+                  .animate(onPlay: (controller) => controller.repeat(reverse: true))
+                  .rotate(begin: -0.1, end: 0.1, duration: 300.ms, curve: Curves.easeInOutSine),
+            ],
           ),
         ],
       ).animate().fadeIn(duration: 600.ms).slideY(begin: -0.2, end: 0),
@@ -409,7 +444,14 @@ class BookCard extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => BookDetailScreen(book: book)),
-        );
+        ).then((_) {
+          // If the book status changed, we need the Home screen to reflect it
+          // We can find the state of HomeScreen through context if it's the target
+           final homeState = context.findAncestorStateOfType<HomeScreenState>();
+           if(homeState != null) {
+              homeState.loadInitialData(); 
+           }
+        });
       },
       child: Container(
         width: isGrid ? null : 110,
@@ -456,6 +498,23 @@ class BookCard extends StatelessWidget {
                               Icons.star_rounded,
                               color: Colors.white,
                               size: 14,
+                            ),
+                          ),
+                        ),
+                      if (book.isBookmarked)
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: theme.primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.bookmark_rounded,
+                              color: Colors.white,
+                              size: 10,
                             ),
                           ),
                         ),

@@ -1,6 +1,6 @@
 class NotificationModel {
   final int id;
-  final int userId;
+  final int? userId;
   final String type;
   final String title;
   final String message;
@@ -13,7 +13,7 @@ class NotificationModel {
 
   NotificationModel({
     required this.id,
-    required this.userId,
+    this.userId,
     required this.type,
     required this.title,
     required this.message,
@@ -28,7 +28,7 @@ class NotificationModel {
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
     return NotificationModel(
       id: json['id'] ?? 0,
-      userId: json['userId'] ?? json['user_id'] ?? 0,
+      userId: json['userId'] ?? json['user_id'],
       type: json['type'] ?? '',
       title: json['title'] ?? '',
       message: json['message'] ?? '',
@@ -37,8 +37,8 @@ class NotificationModel {
       isRead: json['is_read'] ?? false,
       status: json['status'] ?? '',
       scheduledAt: json['scheduled_at'],
-      createdAt: json['createdAt'] ?? '',
-      updatedAt: json['updatedAt'] ?? '',
+      createdAt: json['createdAt'] ?? json['created_at'] ?? '',
+      updatedAt: json['updatedAt'] ?? json['updated_at'] ?? '',
     );
   }
 
@@ -56,5 +56,33 @@ class NotificationModel {
       'createdAt': createdAt,
       'updatedAt': updatedAt,
     };
+  }
+
+  NotificationModel copyWith({
+    int? id,
+    int? userId,
+    String? type,
+    String? title,
+    String? message,
+    Map<String, dynamic>? metadata,
+    bool? isRead,
+    String? status,
+    String? scheduledAt,
+    String? createdAt,
+    String? updatedAt,
+  }) {
+    return NotificationModel(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      type: type ?? this.type,
+      title: title ?? this.title,
+      message: message ?? this.message,
+      metadata: metadata ?? this.metadata,
+      isRead: isRead ?? this.isRead,
+      status: status ?? this.status,
+      scheduledAt: scheduledAt ?? this.scheduledAt,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
   }
 }

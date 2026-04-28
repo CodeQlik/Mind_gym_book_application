@@ -14,6 +14,7 @@ class LoginModel {
   final String subscriptionPlan;
   final String subscriptionEndDate;
   final String token;
+  final String refreshToken;
 
   LoginModel({
     required this.id,
@@ -31,6 +32,7 @@ class LoginModel {
     required this.subscriptionPlan,
     required this.subscriptionEndDate,
     required this.token,
+    required this.refreshToken,
   });
 
   bool get isUserPremium =>
@@ -74,7 +76,16 @@ class LoginModel {
           ? json['token'].toString()
           : (json['accessToken']?.toString().isNotEmpty == true)
               ? json['accessToken'].toString()
-              : '',
+              : (json['access_token']?.toString().isNotEmpty == true)
+                  ? json['access_token'].toString()
+                  : (json['auth_token']?.toString().isNotEmpty == true)
+                      ? json['auth_token'].toString()
+                      : (json['jwt']?.toString().isNotEmpty == true)
+                          ? json['jwt'].toString()
+                          : '',
+      refreshToken: json['refreshToken']?.toString() ??
+          json['refresh_token']?.toString() ??
+          '',
     );
   }
   Map<String, dynamic> toJson() {
@@ -94,7 +105,46 @@ class LoginModel {
       'subscription_plan': subscriptionPlan,
       'subscription_end_date': subscriptionEndDate,
       'token': token,
+      'refreshToken': refreshToken,
     };
+  }
+
+  LoginModel copyWith({
+    int? id,
+    String? userType,
+    String? name,
+    String? email,
+    String? phone,
+    String? additionalPhone,
+    ProfileData? profile,
+    bool? isActive,
+    bool? isVerified,
+    String? createdAt,
+    String? updatedAt,
+    String? subscriptionStatus,
+    String? subscriptionPlan,
+    String? subscriptionEndDate,
+    String? token,
+    String? refreshToken,
+  }) {
+    return LoginModel(
+      id: id ?? this.id,
+      userType: userType ?? this.userType,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      phone: phone ?? this.phone,
+      additionalPhone: additionalPhone ?? this.additionalPhone,
+      profile: profile ?? this.profile,
+      isActive: isActive ?? this.isActive,
+      isVerified: isVerified ?? this.isVerified,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      subscriptionStatus: subscriptionStatus ?? this.subscriptionStatus,
+      subscriptionPlan: subscriptionPlan ?? this.subscriptionPlan,
+      subscriptionEndDate: subscriptionEndDate ?? this.subscriptionEndDate,
+      token: token ?? this.token,
+      refreshToken: refreshToken ?? this.refreshToken,
+    );
   }
 }
 

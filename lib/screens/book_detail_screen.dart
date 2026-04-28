@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../models/book_model.dart';
 import '../services/api_service.dart';
-import '../services/auth_service.dart'; // Import AuthService
+import '../services/auth_service.dart';
 import '../models/login_model.dart';
 import 'reading_screen.dart';
 import 'audio_player_screen.dart';
@@ -22,26 +22,29 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   late BookModel _book;
   late bool _isBookmarked;
   bool _isLoadingBookmark = false;
+  bool _hasAudio = false;
+  bool _hasReading = false;
+  bool _isAudioPreview = false;
   bool _isLoadingDetails = false;
+
+  final ScrollController _scrollController = ScrollController();
+  double _scrollOffset = 0.0;
 
   @override
   void initState() {
     super.initState();
     _book = widget.book;
     _isBookmarked = widget.book.isBookmarked;
-
+    _scrollController.addListener(() {
+      setState(() => _scrollOffset = _scrollController.offset);
+    });
     _initBookDetails();
   }
 
   Future<void> _initBookDetails() async {
     final user = await AuthService.getUser();
     final token = user?.token;
-
-    // If PDF is missing OR we just want to ensure we have the latest bookmark status from server
-    // (Especially important if the previous screen didn't have the latest status)
-    if (_book.pdfUrl.isEmpty || token != null) {
-      _loadFullDetails(token);
-    }
+    if (_book.pdfUrl.isEmpty || token != null) _loadFullDetails(token);
   }
 
   Future<void> _loadFullDetails(String? token) async {
@@ -51,11 +54,23 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
       if (fullBook != null && mounted) {
         setState(() {
           _book = fullBook;
-          // Sync local bookmark state with the fresh data from server
-          if (token != null) {
-            _isBookmarked = fullBook.isBookmarked;
-          }
+          if (token != null) _isBookmarked = fullBook.isBookmarked;
+          _hasReading = _book.pdfUrl.isNotEmpty || _book.epubLink.isNotEmpty;
+          _hasAudio = _book.audioUrl.isNotEmpty;
         });
+      }
+
+      if (token != null && mounted) {
+        final data = await ApiService.getBookContent(widget.book.id, token);
+        if (data != null && mounted) {
+          final chapters = data['audio_chapters'] as List<dynamic>?;
+          setState(() {
+            _hasReading = data['file_url'] != null && data['file_url'].toString().isNotEmpty;
+            _hasAudio = chapters != null && chapters.isNotEmpty;
+            final isPremium = data['is_premium'] ?? false;
+            _isAudioPreview = !isPremium;
+          });
+        }
       }
     } catch (e) {
       debugPrint("Error loading full details: $e");
@@ -64,391 +79,332 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
-  Future<void> _toggleBookmark() async {
-    // Optimistic update
-    setState(() {
-      _isLoadingBookmark = true;
-    });
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
+  Future<void> _toggleBookmark() async {
+    setState(() => _isLoadingBookmark = true);
     try {
       final user = await AuthService.getUser();
       if (user != null && user.token.isNotEmpty) {
-        // Call API
-        final newState = await ApiService.toggleBookmark(_book.id, user.token);
-        debugPrint("BookDetailScreen: New bookmark state from API: $newState");
-
         if (mounted) {
+          await ApiService.toggleBookmark(_book.id, user.token);
           setState(() {
-            _isBookmarked = newState;
-            _book = _book.copyWith(isBookmarked: newState);
+            _isBookmarked = !_isBookmarked;
+            _book = _book.copyWith(isBookmarked: _isBookmarked);
             _isLoadingBookmark = false;
           });
-
-          ScaffoldMessenger.of(context).clearSnackBars(); // Clear existing
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_isBookmarked
-                  ? "Added to bookmarks"
-                  : "Removed from bookmarks"),
-              duration: const Duration(seconds: 1),
-              backgroundColor: _isBookmarked ? Colors.green : Colors.redAccent,
-            ),
-          );
         }
       } else {
-        // User not logged in
         if (mounted) {
-          setState(() => _isLoadingBookmark = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Please login to bookmark books")),
-          );
+           setState(() => _isLoadingBookmark = false);
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please login to bookmark")));
         }
       }
     } catch (e) {
-      debugPrint("Error toggling bookmark: $e");
-      if (mounted) {
-        setState(() => _isLoadingBookmark = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to update bookmark")),
-        );
-      }
+       if (mounted) setState(() => _isLoadingBookmark = false);
     }
   }
+
+  bool _isDescriptionExpanded = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final size = MediaQuery.of(context).size;
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: Stack(
         children: [
-          // Background Image (Blurred)
-          Positioned.fill(
-            child: _book.thumbnailUrl.isNotEmpty
-                ? Image.network(
-                    _book.thumbnailUrl,
-                    fit: BoxFit.cover,
-                  )
-                : Container(color: theme.primaryColor.withOpacity(0.5)),
-          ),
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(
-                color: Colors.black
-                    .withOpacity(0.5), // Darker overlay for better contrast
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: _isLoadingDetails
-                ? const Center(
-                    child: CircularProgressIndicator(color: Colors.white))
-                : Column(
-                    children: [
-                      // App Bar
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _buildIconButton(
-                              context,
-                              icon: Icons.arrow_back_ios_new_rounded,
-                              onTap: () => Navigator.pop(context),
-                            ),
-                            Text(
-                              "Book Details",
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.9),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                            _buildIconButton(
-                              context,
-                              icon: _isBookmarked
-                                  ? Icons.bookmark_rounded
-                                  : Icons.bookmark_border_rounded,
-                              color: _isBookmarked
-                                  ? theme.primaryColor
-                                  : Colors.white,
-                              isLoading: _isLoadingBookmark,
-                              onTap: _toggleBookmark,
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(24, 10, 24, 100),
+          _buildEliteBackground(theme),
+          _isLoadingDetails
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFFFBBF24)))
+              : RefreshIndicator(
+                  onRefresh: _initBookDetails,
+                  displacement: 80,
+                  color: const Color(0xFFFBBF24),
+                  backgroundColor: const Color(0xFF1E1E2C),
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(), // Important for pull-to-refresh
+                    slivers: [
+                      _buildEliteAppBar(context, theme, size),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const SizedBox(height: 20),
-                              // Book Cover (Hero)
-                              Hero(
-                                tag: _book.id,
-                                child: Stack(
-                                  children: [
-                                    Container(
-                                      height: 280,
-                                      width: 190,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color:
-                                                Colors.black.withOpacity(0.4),
-                                            blurRadius: 25,
-                                            offset: const Offset(0, 10),
-                                          ),
-                                        ],
-                                        image: _book.thumbnailUrl.isNotEmpty
-                                            ? DecorationImage(
-                                                image: NetworkImage(
-                                                    _book.thumbnailUrl),
-                                                fit: BoxFit.cover,
-                                              )
-                                            : null,
-                                      ),
-                                      child: _book.thumbnailUrl.isEmpty
-                                          ? const Center(
-                                              child: Icon(Icons.book,
-                                                  size: 50, color: Colors.grey),
-                                            )
-                                          : null,
-                                    ),
-                                    if (_book.isPremium)
-                                      Positioned(
-                                        top: 15,
-                                        right: 15,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 5),
-                                          decoration: BoxDecoration(
-                                            color: Colors.amber,
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.star_rounded,
-                                                  color: Colors.white,
-                                                  size: 16),
-                                              SizedBox(width: 4),
-                                              Text("PREMIUM",
-                                                  style: TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 10,
-                                                      fontWeight:
-                                                          FontWeight.bold)),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-
-                              const SizedBox(height: 30),
-
-                              // Title & Author
-                              Text(
-                                _book.title,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                  letterSpacing: 0.5,
-                                ),
-                              )
-                                  .animate()
-                                  .fadeIn(duration: 500.ms)
-                                  .slideY(begin: 0.2, end: 0),
-                              const SizedBox(height: 8),
-                              Text(
-                                _book.authors.join(", "),
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.white.withOpacity(0.7),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              )
-                                  .animate(delay: 100.ms)
-                                  .fadeIn()
-                                  .slideY(begin: 0.2, end: 0),
-
-                              const SizedBox(height: 30),
-
-                              // Info Row (Rating, Pages, Language)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    vertical: 20, horizontal: 20),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                      color: Colors.white.withOpacity(0.1)),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceEvenly,
-                                  children: [
-                                    _buildInfoItem(
-                                        "Rating", "${_book.rating} ⭐"),
-                                    _buildDivider(),
-                                    _buildInfoItem(
-                                        "Pages", "${_book.pageCount}"),
-                                    _buildDivider(),
-                                    _buildInfoItem(
-                                        "Language",
-                                        _book.previewPages > 0
-                                            ? "PREVIEW"
-                                            : "FULL"),
-                                  ],
-                                ),
-                              ).animate(delay: 200.ms).fadeIn().scale(),
-
-                              const SizedBox(height: 30),
-
-                              // Description
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  "Description",
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white.withOpacity(0.9),
-                                  ),
-                                ),
-                              ).animate(delay: 300.ms).fadeIn(),
-                              const SizedBox(height: 12),
-                              Text(
-                                _book.description,
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  color: Colors.white.withOpacity(0.7),
-                                  height: 1.6,
-                                ),
-                              ).animate(delay: 350.ms).fadeIn(),
+                              _buildEliteTitleSection(theme),
+                              const SizedBox(height: 24),
+                              _buildEliteStatsGrid(theme),
+                              const SizedBox(height: 32),
+                              _buildEliteDescription(theme),
+                              if (_book.highlights.isNotEmpty) ...[
+                                const SizedBox(height: 32),
+                                _buildEliteHighlights(theme),
+                              ],
+                              const SizedBox(height: 140),
                             ],
                           ),
                         ),
                       ),
                     ],
                   ),
+                ),
+          if (!_isLoadingDetails) _buildEliteBottomActions(context, theme),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEliteBackground(ThemeData theme) {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          if (_book.thumbnailUrl.isNotEmpty)
+            Image.network(_book.thumbnailUrl, fit: BoxFit.cover, width: double.infinity, height: double.infinity)
+          else
+            Container(color: theme.primaryColor),
+          BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [Colors.black.withOpacity(0.5), Colors.black.withOpacity(0.8), Colors.black],
+                ),
+              ),
+            ),
           ),
         ],
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _isLoadingDetails
-          ? null
-          : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 1,
-                    child: SizedBox(
-                      height: 60,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  AudioPlayerScreen(book: _book),
-                            ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white.withOpacity(0.2),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        child: const Icon(Icons.headphones_rounded),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 3,
-                    child: SizedBox(
-                      height: 60,
-                      child: _StartReadingButton(book: _book, theme: theme),
-                    ),
-                  ),
-                ],
-              ),
-            ).animate(delay: 500.ms).slideY(begin: 1, end: 0).fadeIn(),
     );
   }
 
-  Widget _buildIconButton(
-    BuildContext context, {
-    required IconData icon,
-    required VoidCallback onTap,
-    Color color = Colors.white,
-    bool isLoading = false,
-  }) {
-    return GestureDetector(
-      onTap: isLoading ? null : onTap,
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
+  Widget _buildEliteAppBar(BuildContext context, ThemeData theme, Size size) {
+    // Parallax logic for image (Clamped to prevent assertion errors on overscroll)
+    final double opacity = (1.0 - (_scrollOffset / 200)).clamp(0.0, 1.0);
+    final double scale = 1.0 + (_scrollOffset / size.height).clamp(0, 0.2);
+
+    return SliverAppBar(
+      expandedHeight: size.height * 0.45,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      leading: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: _buildGlassIconButton(icon: Icons.arrow_back_ios_new_rounded, onTap: () => Navigator.pop(context)),
+      ),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: _buildGlassIconButton(
+            icon: _isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+            color: _isBookmarked ? const Color(0xFFFBBF24) : Colors.white,
+            isLoading: _isLoadingBookmark,
+            onTap: _toggleBookmark,
+          ),
         ),
-        child: isLoading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white))
-            : Icon(icon, color: color, size: 20),
+      ],
+      flexibleSpace: FlexibleSpaceBar(
+        background: Opacity(
+          opacity: opacity,
+          child: Transform.scale(
+            scale: scale,
+            child: Center(
+              child: Hero(
+                tag: _book.id,
+                child: Container(
+                  margin: const EdgeInsets.only(top: 80),
+                  height: 260, width: 175,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 40, offset: const Offset(0, 20)),
+                      BoxShadow(color: theme.primaryColor.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 5)),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: _book.thumbnailUrl.isNotEmpty 
+                      ? Image.network(_book.thumbnailUrl, fit: BoxFit.cover)
+                      : Container(color: Colors.grey[900], child: const Icon(Icons.book, size: 50, color: Colors.grey)),
+                  ),
+                ),
+              ).animate().scale(duration: 800.ms, curve: Curves.easeOutBack).fadeIn(),
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildInfoItem(String label, String value) {
+  Widget _buildGlassIconButton({required IconData icon, required VoidCallback onTap, Color color = Colors.white, bool isLoading = false}) {
+    return InkWell(
+      onTap: isLoading ? null : onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            height: 44, width: 44,
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.1))),
+            child: Center(
+              child: isLoading 
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Icon(icon, color: color, size: 18),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEliteTitleSection(ThemeData theme) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
+        Text(_book.title, style: theme.textTheme.headlineMedium).animate().fadeIn(duration: 600.ms).slideX(begin: -0.1, end: 0),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
-            fontSize: 12,
-          ),
-        ),
+        Row(
+          children: [
+            Text(_book.authors.join(', '), style: theme.textTheme.titleSmall), // Using Inter for Author/Subtitle
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: const Color(0xFFFBBF24).withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+              child: Text(_book.categoryName, style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+            ),
+          ],
+        ).animate(delay: 200.ms).fadeIn().slideX(begin: -0.05, end: 0),
       ],
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildEliteStatsGrid(ThemeData theme) {
     return Container(
-      height: 30,
-      width: 1,
-      color: Colors.white.withOpacity(0.2),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.04), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white.withOpacity(0.08))),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildThinStat("RATING", "${_book.rating}"),
+          _buildVerticalStatDivider(),
+          _buildThinStat("LANGUAGE", _book.language.toUpperCase()),
+          _buildVerticalStatDivider(),
+          _buildThinStat("PRICING", _book.isPremium ? "ELITE" : "FREE"),
+        ],
+      ),
+    ).animate(delay: 400.ms).fadeIn().slideY(begin: 0.1, end: 0);
+  }
+
+  Widget _buildThinStat(String label, String value) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white30, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 1)),
+        const SizedBox(height: 6),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildVerticalStatDivider() => Container(width: 1, height: 20, color: Colors.white.withOpacity(0.05));
+
+  Widget _buildEliteDescription(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("About this Book", style: theme.textTheme.titleMedium),
+        const SizedBox(height: 12),
+        Text(
+          _book.description,
+          maxLines: _isDescriptionExpanded ? null : 4, overflow: _isDescriptionExpanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.white70, height: 1.6),
+        ),
+        GestureDetector(
+          onTap: () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(_isDescriptionExpanded ? "Show Less" : "Read More", style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+        ),
+      ],
+    ).animate(delay: 600.ms).fadeIn();
+  }
+
+  Widget _buildEliteHighlights(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: const Color(0xFFFBBF24).withOpacity(0.05), borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFFBBF24).withOpacity(0.1))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("CORE HIGHLIGHTS", style: TextStyle(color: Color(0xFFFBBF24), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+          const SizedBox(height: 12),
+          Text(_book.highlights, style: theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Colors.white70)),
+        ],
+      ),
+    ).animate(delay: 800.ms).fadeIn().scale(begin: const Offset(0.95, 0.95), end: const Offset(1, 1));
+  }
+
+  Widget _buildEliteBottomActions(BuildContext context, ThemeData theme) {
+    return Positioned(
+      bottom: 32, left: 32, right: 32,
+      child: Row(
+        children: [
+          if (_hasReading) Expanded(child: _StartReadingButton(book: _book, theme: theme)),
+          if (_hasReading && _hasAudio) const SizedBox(width: 16),
+          if (_hasAudio) _buildListenAction(theme),
+        ],
+      ).animate().slideY(begin: 1, end: 0, duration: 800.ms, curve: Curves.easeOutQuart),
+    );
+  }
+
+  Widget _buildListenAction(ThemeData theme) {
+    return Container(
+      height: 56, width: 56,
+      decoration: BoxDecoration(color: const Color(0xFF1E1E2C), borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.white.withOpacity(0.1))),
+      child: InkWell(
+        onTap: _handleAudio,
+        borderRadius: BorderRadius.circular(18),
+        child: const Icon(Icons.play_arrow_rounded, color: Color(0xFFFBBF24), size: 32),
+      ),
+    );
+  }
+
+  Future<void> _handleAudio() async {
+    // 1. Get fresh user data to ensure the premium status is up-to-date
+    final user = await AuthService.getUser();
+    final bool userIsPremium = user?.isUserPremium ?? false;
+
+    // 2. Logic: The content is locked only if _isAudioPreview is true 
+    // AND the user does not have a global premium subscription.
+    // In your API, _isAudioPreview is the opposite of data['is_premium'].
+    final bool isContentLocked = _isAudioPreview && !userIsPremium;
+
+    if (isContentLocked) {
+      final success = await Navigator.push(
+        context, 
+        MaterialPageRoute(builder: (context) => const SubscriptionScreen())
+      );
+      
+      if (success == true) {
+        final updatedUser = await AuthService.getUser();
+        _loadFullDetails(updatedUser?.token);
+      }
+      return;
+    }
+
+    // 3. Flow: Content is unlocked (either free or user is premium)
+    Navigator.push(
+      context, 
+      MaterialPageRoute(builder: (context) => AudioPlayerScreen(book: _book))
     );
   }
 }
@@ -456,9 +412,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 class _StartReadingButton extends StatefulWidget {
   final BookModel book;
   final ThemeData theme;
-
   const _StartReadingButton({required this.book, required this.theme});
-
   @override
   State<_StartReadingButton> createState() => _StartReadingButtonState();
 }
@@ -466,239 +420,67 @@ class _StartReadingButton extends StatefulWidget {
 class _StartReadingButtonState extends State<_StartReadingButton> {
   bool _isLoading = false;
 
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBBF24),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: const Color(0xFFFBBF24).withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _handleRead,
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.transparent, shadowColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+        child: Text(_isLoading ? "PREPARING..." : "START READING", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5)),
+      ),
+    );
+  }
+
   Future<void> _handleRead() async {
     setState(() => _isLoading = true);
-    debugPrint(
-        "BookDetailScreen: _handleRead clicked for book ${widget.book.id}");
     try {
       final cachedUser = await AuthService.getUser();
       final token = cachedUser?.token;
+      if (token == null || token.isEmpty) throw Exception("Please login");
 
-      if (token == null || token.isEmpty) {
-        throw Exception("Please login to continue");
-      }
-
-      // 1. Always fetch latest profile to check subscription status as requested
-      debugPrint("BookDetailScreen: Refreshing user profile...");
       LoginModel user;
-      try {
-        user = await ApiService.getUserProfile(token);
-        await AuthService.saveUser(user);
-        debugPrint(
-            "BookDetailScreen: Profile refreshed. Status: ${user.subscriptionStatus}");
-      } catch (e) {
-        debugPrint(
-            "BookDetailScreen: Profile refresh failed, using cached: $e");
-        user = cachedUser!;
+      try { user = await ApiService.getUserProfile(token); await AuthService.saveUser(user); } catch (e) { user = cachedUser!; }
+
+      if (widget.book.isPremium && !user.isUserPremium) {
+        final success = await Navigator.push(context, MaterialPageRoute(builder: (context) => const SubscriptionScreen()));
+        if (success == true) return _handleRead();
+        if (mounted) setState(() => _isLoading = false);
+        return;
       }
 
-      // 2. If book is premium, check if user has active subscription
-      if (widget.book.isPremium) {
-        final bool isAlreadyPremium = user.isUserPremium;
-        debugPrint("BookDetailScreen: Is User premium? $isAlreadyPremium");
-
-        if (!isAlreadyPremium) {
-          debugPrint(
-              "BookDetailScreen: User not premium, opening SubscriptionScreen");
-          final success = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const SubscriptionScreen()),
-          );
-
-          // If they returned from subscription, we should check again or they might have paid
-          if (success == true) {
-            debugPrint(
-                "BookDetailScreen: User returned from successful subscription. Refreshing...");
-            return _handleRead(); // Recursive call to check again
-          } else {
-            if (mounted) setState(() => _isLoading = false);
-            return;
-          }
+      final readData = await ApiService.getBookContent(widget.book.id, token);
+      if (readData != null && mounted) {
+        String fileUrl = readData['file_url'] ?? '';
+        final fileType = readData['file_type'] ?? '';
+        final bool isPremium = readData['is_premium'] ?? false;
+        if (fileType == 'epub' && !isPremium) {
+           final success = await Navigator.push(context, MaterialPageRoute(builder: (context) => const SubscriptionScreen()));
+           if (success == true) return _handleRead();
+           if (mounted) setState(() => _isLoading = false);
+           return;
         }
-      }
+        if (fileUrl.isNotEmpty && !fileUrl.startsWith('http')) fileUrl = "${ApiService.baseUrl}/$fileUrl";
 
-      if (token.isNotEmpty) {
-        debugPrint(
-            "BookDetailScreen: Calling ApiService.readBook for ${widget.book.id}");
-        final readData = await ApiService.readBook(widget.book.id, token);
-
-        if (readData != null) {
-          debugPrint("BookDetailScreen: readBook raw data: $readData");
-          final dataObj = readData;
-          final fileData = dataObj['file_data'];
-
-          String pdfUrl = '';
-          String epubLink = '';
-
-          if (fileData != null) {
-            if (fileData['type'] == 'pdf') {
-              pdfUrl = fileData['url'] ?? '';
-            } else if (fileData['type'] == 'epub') {
-              epubLink = fileData['url'] ?? '';
-            }
-          } else {
-            pdfUrl = dataObj['pdf_url'] ?? dataObj['pdf_file']?['url'] ?? '';
-            epubLink = dataObj['epub_url'] ?? '';
-          }
-
-          // Re-prefix if relative and from mindgym
-          if (pdfUrl.isNotEmpty && !pdfUrl.startsWith('http')) {
-            pdfUrl = "${ApiService.baseUrl}/$pdfUrl";
-          }
-          if (epubLink.isNotEmpty && !epubLink.startsWith('http')) {
-            epubLink = "${ApiService.baseUrl}/$epubLink";
-          }
-
-          debugPrint(
-              "BookDetailScreen: Resolved URLs - PDF: $pdfUrl, EPUB: $epubLink");
-
-          final bool isPreview = dataObj['isPreview'] ?? false;
-
-          if (mounted) {
-            if (epubLink.isNotEmpty) {
-              debugPrint(
-                  "BookDetailScreen: Navigating to ReadingScreen (EPUB)");
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ReadingScreen(
-                    url: epubLink,
-                    title: widget.book.title + (isPreview ? " (Preview)" : ""),
-                    isEpub: true,
-                    isPreview: isPreview,
-                    token: token,
-                  ),
-                ),
-              );
-              setState(() => _isLoading = false);
-              return;
-            } else if (pdfUrl.isNotEmpty) {
-              debugPrint("BookDetailScreen: Navigating to ReadingScreen (PDF)");
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ReadingScreen(
-                    url: pdfUrl,
-                    title: widget.book.title + (isPreview ? " (Preview)" : ""),
-                    isPdf: true,
-                    isPreview: isPreview,
-                    token: token,
-                  ),
-                ),
-              );
-              setState(() => _isLoading = false);
-              return;
-            }
-          }
-        }
-      } else {
-        debugPrint(
-            "BookDetailScreen: Token is null or empty, skipping readBook API");
-      }
-
-      // Fallback to existing logic if readBook fails or user is not logged in
-      if (!mounted) return;
-
-      debugPrint(
-          "BookDetailScreen: Fallback logic - PDF url: ${widget.book.pdfUrl}, EPUB url: ${widget.book.epubLink}, Preview url: ${widget.book.previewLink}");
-
-      // 1. Check for PDF (Direct URL)
-      if (widget.book.pdfUrl.isNotEmpty) {
-        debugPrint(
-            "BookDetailScreen: Fallback - Navigating to ReadingScreen (PDF)");
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ReadingScreen(
-              url: widget.book.pdfUrl,
-              title: widget.book.title,
-              isPdf: true,
-              token: token,
-            ),
-          ),
-        );
-      }
-      // 2. Check for EPUB Link (Native Reading)
-      else if (widget.book.epubLink.isNotEmpty) {
-        debugPrint(
-            "BookDetailScreen: Fallback - Navigating to ReadingScreen (EPUB)");
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ReadingScreen(
-              url: widget.book.epubLink,
-              title: widget.book.title,
-              isEpub: true,
-              token: token,
-            ),
-          ),
-        );
-      }
-      // 3. Check for Preview Link (WebView)
-      else if (widget.book.previewLink.isNotEmpty) {
-        debugPrint(
-            "BookDetailScreen: Fallback - Navigating to ReadingScreen (WEBVIEW)");
-        String url = widget.book.previewLink;
-        if (url.startsWith('http://')) {
-          url = url.replaceFirst('http://', 'https://');
-        }
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ReadingScreen(
-              url: url,
-              title: widget.book.title,
-              isEpub: false,
-              token: token,
-            ),
-          ),
-        );
-      } else {
-        debugPrint("BookDetailScreen: All fallback checks failed");
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No preview available for this book')),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (context) => ReadingScreen(
+          bookId: widget.book.id.toString(),
+          title: widget.book.title,
+          url: fileUrl,
+          isPdf: fileType == 'pdf',
+          isEpub: fileType == 'epub',
+          isPreview: !isPremium,
+          token: token,
+        )));
       }
     } catch (e) {
-      debugPrint("BookDetailScreen Error catch: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load book: $e')),
-        );
-      }
+      debugPrint("Read Error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: _isLoading ? null : _handleRead,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: widget.theme.primaryColor,
-        foregroundColor: Colors.white,
-        elevation: 10,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
-      ),
-      child: _isLoading
-          ? const SizedBox(
-              height: 24,
-              width: 24,
-              child: CircularProgressIndicator(
-                  color: Colors.white, strokeWidth: 2),
-            )
-          : const Text(
-              "Start Reading",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1,
-              ),
-            ),
-    );
   }
 }

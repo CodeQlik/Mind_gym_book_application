@@ -53,8 +53,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<LoginModel> _fetchProfile() async {
     String? token = widget.user?.token;
+    LoginModel? savedUser;
     if (token == null || token.isEmpty) {
-      final savedUser = await AuthService.getUser();
+      savedUser = await AuthService.getUser();
       token = savedUser?.token;
     }
 
@@ -77,8 +78,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subscriptionStatus: user.subscriptionStatus,
             subscriptionPlan: user.subscriptionPlan,
             subscriptionEndDate: user.subscriptionEndDate,
-            token: token // Keep the token used for request
-            );
+            token: token, // Keep the token used for request
+            refreshToken: savedUser?.refreshToken ?? user.refreshToken);
 
         setState(() {
           _currentUser = userWithToken;
@@ -119,7 +120,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70, // Compresses image to avoid server-side size limits
+    );
 
     if (pickedFile != null) {
       setState(() {
@@ -158,6 +162,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Profile updated successfully")),
         );
+        Navigator.pop(context, updatedUser);
       }
     } catch (e) {
       if (mounted) {
@@ -168,6 +173,112 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _changePassword(String oldPass, String newPass, String confirmPass) async {
+    if (_currentUser == null) return;
+    
+    try {
+      final success = await ApiService.changePassword(
+        token: _currentUser!.token,
+        oldPassword: oldPass,
+        newPassword: newPass,
+        confirmPassword: confirmPass,
+      );
+      
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Password changed successfully")),
+        );
+        Navigator.pop(context); // Close dialog
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll("Exception: ", "")), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  void _showChangePasswordDialog() {
+    final oldPassController = TextEditingController();
+    final newPassController = TextEditingController();
+    final confirmPassController = TextEditingController();
+    final dialogFormKey = GlobalKey<FormState>();
+    bool dialCodeIsLoading = false;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("Change Password", style: TextStyle(fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+            child: Form(
+              key: dialogFormKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildDialogTextField("Old Password", oldPassController, true),
+                  const SizedBox(height: 16),
+                  _buildDialogTextField("New Password", newPassController, true),
+                  const SizedBox(height: 16),
+                  _buildDialogTextField("Confirm Password", confirmPassController, true),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: dialCodeIsLoading ? null : () async {
+                if (dialogFormKey.currentState!.validate()) {
+                  if (newPassController.text != confirmPassController.text) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("New passwords do not match")),
+                    );
+                    return;
+                  }
+                  
+                  setDialogState(() => dialCodeIsLoading = true);
+                  await _changePassword(
+                    oldPassController.text,
+                    newPassController.text,
+                    confirmPassController.text,
+                  );
+                  if (mounted) setDialogState(() => dialCodeIsLoading = false);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF764BA2),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: dialCodeIsLoading 
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Text("Change"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDialogTextField(String label, TextEditingController controller, bool isPassword) {
+    return TextFormField(
+      controller: controller,
+      obscureText: isPassword,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+      validator: (v) => v!.isEmpty ? "Required" : (isPassword && v.length < 6 ? "Min 6 chars" : null),
+    );
   }
 
   @override
@@ -184,7 +295,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         actions: [
           if (_currentUser != null)
             IconButton(
-              icon: Icon(_isEditing ? Icons.close : Icons.edit),
+              icon: Icon(_isEditing ? Icons.close_rounded : Icons.edit_rounded),
               onPressed: _isLoading ? null : _toggleEdit,
               tooltip: _isEditing ? "Cancel" : "Edit Profile",
             ),
@@ -322,14 +433,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         .animate(delay: 150.ms)
                         .fadeIn()
                         .slideY(begin: 0.2, end: 0),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 20),
                   ],
 
                   if (_isEditing)
                     _buildTextField(
                         "Name", _nameController, Icons.person_outline),
 
-                  if (_isEditing) const SizedBox(height: 16),
+                  if (_isEditing) const SizedBox(height: 20),
 
                   // Fields
                   _isEditing
@@ -337,10 +448,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           children: [
                             _buildTextField("Email", _emailController,
                                 Icons.email_outlined),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             _buildTextField("Phone", _phoneController,
                                 Icons.phone_outlined),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             _buildTextField(
                                 "Additional Phone",
                                 _additionalPhoneController,
@@ -368,26 +479,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 30),
 
                   if (_isEditing)
-                    SizedBox(
+                    Container(
                       width: double.infinity,
-                      height: 50,
+                      height: 55,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(15),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF667EEA).withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _saveProfile,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF667EEA),
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                              borderRadius: BorderRadius.circular(15)),
                         ),
                         child: _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white)
-                            : const Text("Update",
+                            ? const SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Text("Update Profile",
                                 style: TextStyle(
-                                    fontSize: 16,
+                                    fontSize: 18,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.white)),
+                                    color: Colors.white,
+                                    letterSpacing: 0.5)),
                       ),
                     ),
+                  
+                  if (!_isEditing) ...[
+                    const SizedBox(height: 16),
+                    TextButton.icon(
+                      onPressed: _showChangePasswordDialog,
+                      icon: const Icon(Icons.lock_reset_rounded, color: Color(0xFF764BA2)),
+                      label: const Text(
+                        "Change Password",
+                        style: TextStyle(
+                          color: Color(0xFF764BA2),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                          side: const BorderSide(color: Color(0xFF764BA2), width: 1.5),
+                        ),
+                      ),
+                    ).animate(delay: 200.ms).fadeIn().slideY(begin: 0.2, end: 0),
+                  ],
                 ],
               ),
             ),
@@ -399,21 +554,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildTextField(
       String label, TextEditingController controller, IconData icon) {
-    return TextFormField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        filled: true,
-        fillColor: Colors.grey[100],
-      ),
-      validator: (value) {
-        if (label == "Name" || label == "Email" || label == "Phone") {
-          if (value == null || value.isEmpty) return "$label is required";
-        }
-        return null;
-      },
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isDark ? Colors.white : const Color(0xFF2D3142),
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ),
+        TextFormField(
+          controller: controller,
+          style: TextStyle(
+            color: isDark ? Colors.white : const Color(0xFF2D3142),
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon, color: const Color(0xFF667EEA), size: 22),
+            filled: true,
+            fillColor: isDark ? const Color(0xFF1E1E2C) : Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: isDark
+                  ? BorderSide.none
+                  : BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: isDark
+                  ? BorderSide.none
+                  : BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: const BorderSide(color: Color(0xFF667EEA), width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: const BorderSide(color: Colors.redAccent, width: 1),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+            hintText: "Enter your $label",
+            hintStyle: TextStyle(
+                color: isDark ? Colors.white38 : Colors.grey.withOpacity(0.5)),
+          ),
+          validator: (value) {
+            if (label == "Name" || label == "Email" || label == "Phone") {
+              if (value == null || value.isEmpty) return "$label is required";
+            }
+            if (label == "Email" && value != null && value.isNotEmpty) {
+              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                  .hasMatch(value)) {
+                return "Enter a valid email address";
+              }
+            }
+            return null;
+          },
+        ),
+      ],
     );
   }
 

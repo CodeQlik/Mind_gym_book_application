@@ -13,25 +13,27 @@ class AppTheme {
   static const Color lightTextSecondary = Color(0xFF9E9E9E);
 
   // Dark Theme Colors
-  static const Color darkBackground = Color(0xFF121212); // Deep dark grey, almost black
-  static const Color darkSurface = Color(0xFF1E1E1E); // Slightly lighter for cards
+  static const Color darkBackground = Color(0xFF0F0F1A); // Synced with Subscription Screen
+  static const Color darkSurface = Color(0xFF1E1E2C); 
   static const Color darkTextPrimary = Color(0xFFE0E0E0);
   static const Color darkTextSecondary = Color(0xFFA0A0A0);
 
   static TextTheme _buildTextTheme(TextTheme base, Color primary, Color secondary) {
-    return GoogleFonts.outfitTextTheme(base).copyWith(
-      displayLarge: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.bold),
-      displayMedium: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.bold),
-      displaySmall: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.bold),
-      headlineLarge: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.w600),
-      headlineMedium: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.w600),
-      headlineSmall: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.w600),
-      titleLarge: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.w600),
-      titleMedium: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.w500),
-      titleSmall: GoogleFonts.outfit(color: primary, fontWeight: FontWeight.w500),
-      bodyLarge: GoogleFonts.roboto(color: primary),
-      bodyMedium: GoogleFonts.roboto(color: secondary),
-      bodySmall: GoogleFonts.roboto(color: secondary),
+    // UNIFIED FONT FAMILY: POPPINS (Primary) & INTER (Subtitle/Simple Details)
+    return GoogleFonts.poppinsTextTheme(base).copyWith(
+      displayLarge: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.bold),
+      displayMedium: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.bold),
+      displaySmall: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.bold),
+      headlineLarge: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.w700),
+      headlineMedium: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.w700),
+      headlineSmall: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.w700),
+      titleLarge: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.w700),
+      titleMedium: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.w600),
+      titleSmall: GoogleFonts.inter(color: secondary, fontWeight: FontWeight.w500, letterSpacing: 0.2), // Subtitle Font
+      bodyLarge: GoogleFonts.poppins(color: primary, fontSize: 16),
+      bodyMedium: GoogleFonts.poppins(color: secondary, fontSize: 14),
+      bodySmall: GoogleFonts.inter(color: secondary, fontSize: 12), // Subtle Detail Font
+      labelLarge: GoogleFonts.poppins(color: primary, fontWeight: FontWeight.w600),
     );
   }
 
@@ -58,7 +60,7 @@ class AppTheme {
       color: lightSurface,
       elevation: 2,
       shadowColor: Colors.black.withOpacity(0.05),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     ),
     textTheme: _buildTextTheme(ThemeData.light().textTheme, lightTextPrimary, lightTextSecondary),
     iconTheme: const IconThemeData(color: lightTextPrimary),
@@ -93,7 +95,7 @@ class AppTheme {
       color: darkSurface,
       elevation: 2,
       shadowColor: Colors.black.withOpacity(0.2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     ),
     textTheme: _buildTextTheme(ThemeData.dark().textTheme, darkTextPrimary, darkTextSecondary),
     iconTheme: const IconThemeData(color: darkTextPrimary),

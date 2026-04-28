@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../screens/login_screen.dart';
+import '../utils/app_toasts.dart';
 
 import '../services/api_service.dart';
 import '../models/user_register_model.dart';
@@ -73,7 +74,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     if (!showOtpField) {
-      _showSnackBar("Please click 'Verify' to get an OTP first");
+      AppToasts.info(context, "Please click 'Verify' to get an OTP first");
       return;
     }
 
@@ -101,7 +102,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       setState(() => isLoading = false);
 
       if (mounted) {
-        _showSnackBar("Welcome ${user.name}! Registration successful");
+        AppToasts.success(context, "Welcome ${user.name}! Registration successful");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -109,25 +110,31 @@ class _SignUpScreenState extends State<SignUpScreen> {
       }
     } catch (e) {
       setState(() => isLoading = false);
-      if (mounted) _showSnackBar(e.toString());
+      if (mounted) AppToasts.error(context, e.toString().replaceAll("Exception: ", ""));
     }
   }
 
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
+
 
   // ================= UI BUILDERS =================
 
-  InputDecoration _modernInputStyle(String hint, {IconData? icon}) {
+  InputDecoration _modernInputStyle(BuildContext context, String hint, {IconData? icon}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return InputDecoration(
       hintText: hint,
-      hintStyle: TextStyle(color: Colors.grey.shade600, fontSize: 15),
-      prefixIcon: icon != null ? Icon(icon, color: Colors.grey.shade600) : null,
+      hintStyle: TextStyle(
+        color: isDark ? Colors.white70 : Colors.grey.shade600, 
+        fontSize: 15
+      ),
+      prefixIcon: icon != null 
+          ? Icon(icon, color: isDark ? Colors.white70 : Colors.grey.shade600) 
+          : null,
       filled: true,
-      fillColor: Colors.white.withOpacity(0.9),
+      fillColor: isDark 
+          ? Colors.white.withOpacity(0.1) 
+          : Colors.white.withOpacity(0.9),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(30),
@@ -135,27 +142,41 @@ class _SignUpScreenState extends State<SignUpScreen> {
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(30),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(
+          color: isDark ? Colors.white12 : Colors.transparent, 
+          width: 1
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(30),
-        borderSide: const BorderSide(color: Colors.white, width: 2),
+        borderSide: BorderSide(
+          color: isDark ? colorScheme.primary : Colors.white, 
+          width: 2
+        ),
       ),
     );
   }
 
-  Widget _buildGradientBackground() {
+  Widget _buildGradientBackground(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Container(
       width: double.infinity,
       height: double.infinity,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF667EEA), // Soft Blue
-            Color(0xFF764BA2), // Deep Purple
-          ],
+          colors: isDark 
+            ? [
+                const Color(0xFF0F2027), // Deep Space Black/Blue
+                const Color(0xFF203A43),
+                const Color(0xFF2C5364),
+              ]
+            : [
+                const Color(0xFF667EEA), // Soft Blue
+                const Color(0xFF764BA2), // Deep Purple
+              ],
         ),
       ),
     );
@@ -213,18 +234,27 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Widget _buildEmailVerificationRow() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
+        color: isDark 
+            ? Colors.white.withOpacity(0.1) 
+            : Colors.white.withOpacity(0.9),
         borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: isDark ? Colors.white12 : Colors.transparent,
+          width: 1
+        ),
       ),
       child: Row(
         children: [
           Expanded(
             child: TextFormField(
               controller: emailController,
+              style: TextStyle(color: isDark ? Colors.white : Colors.black87),
               decoration:
-                  _modernInputStyle("Email Address", icon: Icons.email_outlined)
+                  _modernInputStyle(context, "Email Address", icon: Icons.email_outlined)
                       .copyWith(
                 filled: false,
                 border: InputBorder.none,
@@ -232,9 +262,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 focusedBorder: InputBorder.none,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
-                prefixIcon: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: Icon(Icons.email_outlined, color: Colors.grey),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Icon(Icons.email_outlined, color: isDark ? Colors.white70 : Colors.grey),
                 ),
               ),
               validator: (v) => v!.isEmpty ? "Enter email" : null,
@@ -256,17 +286,17 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             email: emailController.text.trim());
                         if (success) {
                           setState(() => showOtpField = true);
-                          if (mounted) _showSnackBar("OTP sent!");
+                          if (mounted) AppToasts.success(context, "OTP sent!");
                         }
                       } catch (e) {
-                        if (mounted) _showSnackBar(e.toString());
+                        if (mounted) AppToasts.error(context, e.toString());
                       }
                     }
                   : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: isEmailFilled
                     ? const Color(0xFF764BA2)
-                    : Colors.grey.shade300,
+                    : (isDark ? Colors.white10 : Colors.grey.shade300),
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding:
@@ -330,7 +360,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          _buildGradientBackground(),
+          _buildGradientBackground(context),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -393,7 +423,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 const SizedBox(height: 25),
                                 TextFormField(
                                   controller: nameController,
-                                  decoration: _modernInputStyle("Full Name",
+                                  style: TextStyle(color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87),
+                                  decoration: _modernInputStyle(context, "Full Name",
                                       icon: Icons.person_outline),
                                   validator: (v) =>
                                       v!.isEmpty ? "Enter name" : null,
@@ -406,7 +437,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                     controller: otpController,
                                     keyboardType: TextInputType.number,
                                     maxLength: 6,
+                                    style: TextStyle(color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87),
                                     decoration: _modernInputStyle(
+                                            context,
                                             "Enter 6-digit OTP",
                                             icon: Icons.lock_clock_outlined)
                                         .copyWith(
@@ -416,10 +449,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                           ApiService.sendOtp(
                                               email:
                                                   emailController.text.trim());
-                                          _showSnackBar("OTP resent");
+                                          AppToasts.success(context, "OTP resent");
                                         },
-                                        child: const Text("Resend",
+                                        child: Text("Resend",
                                             style: TextStyle(
+                                                color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black54,
                                                 fontWeight: FontWeight.bold)),
                                       ),
                                     ),
@@ -431,7 +465,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 TextFormField(
                                   controller: passwordController,
                                   obscureText: true,
-                                  decoration: _modernInputStyle("Password",
+                                  style: TextStyle(color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87),
+                                  decoration: _modernInputStyle(context, "Password",
                                       icon: Icons.lock_outline),
                                   validator: (v) =>
                                       v!.length < 6 ? "Min 6 characters" : null,
@@ -440,7 +475,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 TextFormField(
                                   controller: phoneController,
                                   keyboardType: TextInputType.phone,
-                                  decoration: _modernInputStyle("Phone Number",
+                                  style: TextStyle(color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87),
+                                  decoration: _modernInputStyle(context, "Phone Number",
                                       icon: Icons.phone_outlined),
                                   validator: (v) =>
                                       v!.isEmpty ? "Enter phone" : null,
@@ -449,7 +485,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 TextFormField(
                                   controller: additionalPhoneController,
                                   keyboardType: TextInputType.phone,
+                                  style: TextStyle(color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87),
                                   decoration: _modernInputStyle(
+                                      context,
                                       "Additional Phone",
                                       icon: Icons.phone_android_outlined),
                                 ),

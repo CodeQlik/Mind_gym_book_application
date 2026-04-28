@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import '../models/login_model.dart';
+import '../services/api_service.dart';
 import 'home_screen.dart';
 import 'library_screen.dart';
 import 'more_screen.dart';
 import 'profile_screen.dart';
 import 'notification_screen.dart';
 import 'search_screen.dart';
+import '../services/auth_service.dart';
 
 class MainScreen extends StatefulWidget {
   final LoginModel user;
@@ -18,24 +20,79 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
-  final bool _hasNotifications = false; // Mock notification state
+  int _unreadCount = 0;
+  late LoginModel _currentUser;
+  
+  // Keys to trigger refresh methods across tabs
+  final GlobalKey<HomeScreenState> _homeKey = GlobalKey<HomeScreenState>();
+  final GlobalKey<LibraryScreenState> _libraryKey = GlobalKey<LibraryScreenState>();
+
   late List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
-    // Initialize pages with user data where needed
+    _currentUser = widget.user;
     _pages = [
-      HomeScreen(user: widget.user),
-      const LibraryScreen(),
-      MoreScreen(user: widget.user),
+      HomeScreen(key: _homeKey, user: _currentUser, onRefresh: _fetchUnreadCount),
+      LibraryScreen(key: _libraryKey),
+      MoreScreen(user: _currentUser),
     ];
+    _fetchUnreadCount();
+    _fetchUserProfile();
+  }
+
+  Future<void> _fetchUserProfile() async {
+    try {
+      final updatedUser = await ApiService.getUserProfile(_currentUser.token);
+      if (mounted) {
+        setState(() {
+          _currentUser = updatedUser;
+          // Update pages to use the new user data
+          _pages[0] = HomeScreen(key: _homeKey, user: _currentUser, onRefresh: _fetchUnreadCount);
+          _pages[2] = MoreScreen(user: _currentUser);
+        });
+        // Persist the updated user data
+        await AuthService.saveUser(_currentUser);
+      }
+    } catch (e) {
+      debugPrint("Error fetching user profile: $e");
+    }
+  }
+
+  Future<void> _fetchUnreadCount() async {
+    final count = await ApiService.getUnreadNotificationCount(_currentUser.token);
+    if (mounted) {
+      setState(() {
+        _unreadCount = count;
+      });
+    }
   }
 
   void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
+
     setState(() {
       _selectedIndex = index;
     });
+
+    // Auto-refresh logic when switching tabs
+    if (index == 0) {
+      // Refresh Home
+      _homeKey.currentState?.loadInitialData();
+      _fetchUnreadCount();
+    } else if (index == 1) {
+      // Refresh Library
+      _libraryKey.currentState?.loadBookmarks();
+    }
+  }
+
+  void _goToNotifications() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const NotificationScreen()),
+    );
+    _fetchUnreadCount(); // Refresh count when coming back
   }
 
   @override
@@ -108,13 +165,25 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               // 1. Profile Image
               GestureDetector(
-                onTap: () {
-                  Navigator.push(
+                onTap: () async {
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ProfileScreen(user: widget.user),
+                      builder: (context) => ProfileScreen(user: _currentUser),
                     ),
                   );
+                  // Refresh user from local storage after profile update
+                  final updatedUser = await AuthService.getUser();
+                  if (updatedUser != null && mounted) {
+                    setState(() {
+                      _currentUser = updatedUser;
+                      // Update pages to use the new user data
+                      _pages[0] = HomeScreen(key: _homeKey, user: _currentUser);
+                      _pages[2] = MoreScreen(user: _currentUser);
+                    });
+                    // Refresh home screen data
+                    _homeKey.currentState?.loadInitialData();
+                  }
                 },
                 child: Container(
                   decoration: BoxDecoration(
@@ -125,20 +194,24 @@ class _MainScreenState extends State<MainScreen> {
                     padding: const EdgeInsets.all(2.0),
                     child: CircleAvatar(
                       radius: 18,
-                      backgroundColor: theme.scaffoldBackgroundColor,
-                      backgroundImage: widget.user.profile.url.isNotEmpty
-                          ? NetworkImage(widget.user.profile.url)
+                      backgroundColor: theme.primaryColor, // Use primary as background for initials
+                      backgroundImage: _currentUser.profile.url.isNotEmpty
+                          ? NetworkImage(_currentUser.profile.url)
                           : null,
-                      onBackgroundImageError: widget.user.profile.url.isNotEmpty
-                          ? (_, __) {}
+                      onBackgroundImageError: _currentUser.profile.url.isNotEmpty
+                          ? (e, s) => debugPrint("Profile image load error: $e")
                           : null,
-                      child: widget.user.profile.url.isEmpty
+                      child: _currentUser.profile.url.isEmpty
                           ? Text(
-                              widget.user.profile.initials,
-                              style: TextStyle(
+                              _currentUser.profile.initials.isNotEmpty 
+                                  ? _currentUser.profile.initials 
+                                  : _currentUser.name.isNotEmpty 
+                                      ? _currentUser.name[0].toUpperCase() 
+                                      : "?",
+                              style: const TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: theme.primaryColor,
-                                fontSize: 12,
+                                color: Colors.white, // White text on primary background
+                                fontSize: 13,
                               ),
                             )
                           : null,
@@ -187,13 +260,7 @@ class _MainScreenState extends State<MainScreen> {
 
               // 3. Notification Bell
               GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const NotificationScreen()),
-                  );
-                },
+                onTap: _goToNotifications,
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: const BoxDecoration(
@@ -201,23 +268,41 @@ class _MainScreenState extends State<MainScreen> {
                     shape: BoxShape.circle,
                   ),
                   child: Stack(
+                    clipBehavior: Clip.none,
                     children: [
                       Icon(Icons.notifications_outlined,
                           color: iconColor, size: 26),
-                      if (_hasNotifications)
+                      if (_unreadCount > 0)
                         Positioned(
-                          right: 2,
-                          top: 2,
+                          right: -2,
+                          top: -2,
                           child: Container(
-                            width: 8,
-                            height: 8,
+                            padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(
                               color: const Color(0xFFFF5252),
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: theme.appBarTheme.backgroundColor ??
-                                      Colors.white,
-                                  width: 1.5),
+                              border: Border.all(color: glassColor, width: 2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFFF5252).withOpacity(0.3),
+                                  blurRadius: 4,
+                                  spreadRadius: 1,
+                                )
+                              ],
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            child: Center(
+                              child: Text(
+                                _unreadCount > 9 ? "9+" : "$_unreadCount",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
                         ),

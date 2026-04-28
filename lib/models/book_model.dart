@@ -6,6 +6,7 @@ class BookModel {
   final String description;
   final String thumbnailUrl;
   final String coverImageUrl;
+  final List<String> images; // Added to handle multiple images
   final double rating;
   final int pageCount;
   final String publisher;
@@ -24,6 +25,9 @@ class BookModel {
   final String readUrl;
   final String condition;
   final int stock;
+  final int available; // New field
+  final String audioUrl; // New field
+  final bool isAudioPreview; // New field
   final String highlights;
   final int categoryId;
   final bool isActive;
@@ -42,6 +46,7 @@ class BookModel {
     required this.description,
     required this.thumbnailUrl,
     this.coverImageUrl = '',
+    this.images = const [],
     required this.rating,
     required this.pageCount,
     required this.publisher,
@@ -60,6 +65,9 @@ class BookModel {
     this.readUrl = '',
     this.condition = '',
     this.stock = 0,
+    this.available = 0,
+    this.audioUrl = '',
+    this.isAudioPreview = false,
     this.highlights = '',
     this.categoryId = 0,
     this.isActive = true,
@@ -219,6 +227,26 @@ class BookModel {
       }
     }
 
+    // Handle multiple images
+    List<String> imagesList = [];
+    if (json['images'] != null && json['images'] is List) {
+      for (var img in json['images']) {
+        if (img is Map && img['url'] != null) {
+          imagesList.add(img['url']);
+        } else if (img is String) {
+          imagesList.add(img);
+        }
+      }
+    }
+
+    // Audio file
+    String audioUrl = '';
+    bool isAudioPreview = false;
+    if (json['audio_file'] != null && json['audio_file'] is Map) {
+      audioUrl = json['audio_file']['url'] ?? '';
+      isAudioPreview = json['audio_file']['is_premium'] ?? false;
+    }
+
     return BookModel(
       id: json['id'].toString(),
       title: json['title'] ?? 'No Title',
@@ -227,6 +255,7 @@ class BookModel {
       description: json['description'] ?? 'No description available.',
       thumbnailUrl: thumbUrl,
       coverImageUrl: coverUrl,
+      images: imagesList,
       rating: 4.5, // Default
       pageCount: json['page_count'] ?? 0,
       publisher: 'MindGym',
@@ -235,7 +264,16 @@ class BookModel {
       epubLink: epubLink,
       pdfUrl: pdfUrl,
       categories: categoriesList,
-      isBookmarked: json['isBookmarked'] ?? json['is_read'] ?? false,
+      isBookmarked: (json['isBookmarked'] == true ||
+              json['is_bookmarked'] == true ||
+              json['is_bookmarked'] == 1 ||
+              json['is_read'] == true ||
+              json['is_read'] == 1) &&
+          !(json['isBookmarked'] == false ||
+              json['is_bookmarked'] == false ||
+              json['is_bookmarked'] == 0 ||
+              json['is_read'] == false ||
+              json['is_read'] == 0),
       isPremium: json['is_premium'] ?? false,
       price: json['price']?.toString() ?? '',
       originalPrice: json['original_price']?.toString() ?? '',
@@ -245,6 +283,9 @@ class BookModel {
       readUrl: json['read_url'] ?? '',
       condition: json['condition'] ?? '',
       stock: json['stock'] ?? 0,
+      available: json['available'] ?? 0,
+      audioUrl: audioUrl,
+      isAudioPreview: isAudioPreview,
       highlights: json['highlights'] ?? '',
       categoryId: json['category_id'] ?? 0,
       isActive: json['is_active'] ?? true,
@@ -265,6 +306,7 @@ class BookModel {
     String? description,
     String? thumbnailUrl,
     String? coverImageUrl,
+    List<String>? images,
     double? rating,
     int? pageCount,
     String? publisher,
@@ -283,6 +325,9 @@ class BookModel {
     String? readUrl,
     String? condition,
     int? stock,
+    int? available,
+    String? audioUrl,
+    bool? isAudioPreview,
     String? highlights,
     int? categoryId,
     bool? isActive,
@@ -301,6 +346,7 @@ class BookModel {
       description: description ?? this.description,
       thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
       coverImageUrl: coverImageUrl ?? this.coverImageUrl,
+      images: images ?? this.images,
       rating: rating ?? this.rating,
       pageCount: pageCount ?? this.pageCount,
       publisher: publisher ?? this.publisher,
@@ -319,6 +365,9 @@ class BookModel {
       readUrl: readUrl ?? this.readUrl,
       condition: condition ?? this.condition,
       stock: stock ?? this.stock,
+      available: available ?? this.available,
+      audioUrl: audioUrl ?? this.audioUrl,
+      isAudioPreview: isAudioPreview ?? this.isAudioPreview,
       highlights: highlights ?? this.highlights,
       categoryId: categoryId ?? this.categoryId,
       isActive: isActive ?? this.isActive,

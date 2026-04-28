@@ -9,10 +9,10 @@ class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
   @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
+  LibraryScreenState createState() => LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen>
+class LibraryScreenState extends State<LibraryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
@@ -24,12 +24,12 @@ class _LibraryScreenState extends State<LibraryScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadBookmarks();
+    loadBookmarks();
 
     // Refresh bookmarks when switching to that tab
     _tabController.addListener(() {
       if (_tabController.index == 1 && !_tabController.indexIsChanging) {
-        _loadBookmarks();
+        loadBookmarks();
       }
     });
   }
@@ -41,7 +41,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 
   // Bookmarks Logic
-  Future<void> _loadBookmarks() async {
+  Future<void> loadBookmarks() async {
     setState(() => _isLoadingBookmarks = true);
     try {
       final user = await AuthService.getUser();
@@ -69,7 +69,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         // Toggle off
         await ApiService.toggleBookmark(bookId, user.token);
         // Refresh list
-        _loadBookmarks();
+        loadBookmarks();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Removed from bookmarks")),
@@ -160,18 +160,33 @@ class _LibraryScreenState extends State<LibraryScreen>
     }
 
     if (_bookmarkedBooks.isEmpty) {
-      return _buildEmptyState(
-          theme, "No bookmarks yet", "Save books to read them later.");
+      return RefreshIndicator(
+        onRefresh: loadBookmarks,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.6,
+            alignment: Alignment.center,
+            child: _buildEmptyState(
+                theme, "No bookmarks yet", "Save books to read them later."),
+          ),
+        ),
+      );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(
-          16, 16, 16, 100), // Added bottom padding for nav bar
-      itemCount: _bookmarkedBooks.length,
-      itemBuilder: (context, index) {
-        final book = _bookmarkedBooks[index];
-        return _buildBookmarkItem(theme, book, index);
-      },
+    return RefreshIndicator(
+      onRefresh: loadBookmarks,
+      color: theme.primaryColor,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(
+            16, 16, 16, 120), // Added bottom padding for nav bar
+        itemCount: _bookmarkedBooks.length,
+        itemBuilder: (context, index) {
+          final book = _bookmarkedBooks[index];
+          return _buildBookmarkItem(theme, book, index);
+        },
+      ),
     );
   }
 
@@ -202,7 +217,7 @@ class _LibraryScreenState extends State<LibraryScreen>
               ),
             ).then((_) {
               // Refresh on return in case bookmark status changed
-              _loadBookmarks();
+              loadBookmarks();
             });
           },
           child: Padding(

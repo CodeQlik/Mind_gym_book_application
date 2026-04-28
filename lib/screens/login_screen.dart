@@ -5,6 +5,8 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../models/login_model.dart';
 import 'main_screen.dart';
+import '../utils/app_toasts.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -51,10 +53,8 @@ class _SignInScreenState extends State<LoginScreen> {
             "User saved with token length: ${user.token.length}. Navigating...");
 
         setState(() => isLoading = false);
-        _showSnackBar("Welcome back, ${user.name}!");
+        AppToasts.success(context, "Welcome back, ${user.name}!");
 
-        // Use Future.delayed to ensure context is stable and snackbar is seen?
-        // Or just navigate immediately.
         if (!mounted) return;
 
         Navigator.of(context).pushAndRemoveUntil(
@@ -66,28 +66,32 @@ class _SignInScreenState extends State<LoginScreen> {
       debugPrint("Login error: $e");
       if (mounted) {
         setState(() => isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
+        AppToasts.error(context, e.toString().replaceAll("Exception: ", ""));
       }
     }
   }
 
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
+
 
   // ================= UI BUILDERS =================
 
-  InputDecoration _modernInputStyle(String hint, {IconData? icon}) {
+  InputDecoration _modernInputStyle(BuildContext context, String hint, {IconData? icon}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return InputDecoration(
       hintText: hint,
-      hintStyle: TextStyle(color: Colors.grey.shade600, fontSize: 15),
-      prefixIcon: icon != null ? Icon(icon, color: Colors.grey.shade600) : null,
+      hintStyle: TextStyle(
+        color: isDark ? Colors.white70 : Colors.grey.shade600, 
+        fontSize: 15
+      ),
+      prefixIcon: icon != null 
+          ? Icon(icon, color: isDark ? Colors.white70 : Colors.grey.shade600) 
+          : null,
       filled: true,
-      fillColor: Colors.white.withOpacity(0.9),
+      fillColor: isDark 
+          ? Colors.white.withOpacity(0.1) 
+          : Colors.white.withOpacity(0.9),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(30),
@@ -95,27 +99,41 @@ class _SignInScreenState extends State<LoginScreen> {
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(30),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(
+          color: isDark ? Colors.white12 : Colors.transparent, 
+          width: 1
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(30),
-        borderSide: const BorderSide(color: Colors.white, width: 2),
+        borderSide: BorderSide(
+          color: isDark ? colorScheme.primary : Colors.white, 
+          width: 2
+        ),
       ),
     );
   }
 
-  Widget _buildGradientBackground() {
+  Widget _buildGradientBackground(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Container(
       width: double.infinity,
       height: double.infinity,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF667EEA), // Soft Blue
-            Color(0xFF764BA2), // Deep Purple
-          ],
+          colors: isDark 
+            ? [
+                const Color(0xFF0F2027), // Deep Space Black/Blue
+                const Color(0xFF203A43),
+                const Color(0xFF2C5364),
+              ]
+            : [
+                const Color(0xFF667EEA), // Soft Blue
+                const Color(0xFF764BA2), // Deep Purple
+              ],
         ),
       ),
     );
@@ -168,7 +186,7 @@ class _SignInScreenState extends State<LoginScreen> {
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          _buildGradientBackground(),
+          _buildGradientBackground(context),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -231,7 +249,12 @@ class _SignInScreenState extends State<LoginScreen> {
 
                                 TextFormField(
                                   controller: emailController,
-                                  decoration: _modernInputStyle("Email Address",
+                                  style: TextStyle(
+                                    color: Theme.of(context).brightness == Brightness.dark 
+                                        ? Colors.white 
+                                        : Colors.black87
+                                  ),
+                                  decoration: _modernInputStyle(context, "Email Address",
                                       icon: Icons.email_outlined),
                                   validator: (v) =>
                                       v!.isEmpty ? "Enter email" : null,
@@ -241,7 +264,12 @@ class _SignInScreenState extends State<LoginScreen> {
                                 TextFormField(
                                   controller: passwordController,
                                   obscureText: true,
-                                  decoration: _modernInputStyle("Password",
+                                  style: TextStyle(
+                                    color: Theme.of(context).brightness == Brightness.dark 
+                                        ? Colors.white 
+                                        : Colors.black87
+                                  ),
+                                  decoration: _modernInputStyle(context, "Password",
                                       icon: Icons.lock_outline),
                                   validator: (v) =>
                                       v!.isEmpty ? "Enter password" : null,
@@ -254,7 +282,11 @@ class _SignInScreenState extends State<LoginScreen> {
                                   alignment: Alignment.centerRight,
                                   child: GestureDetector(
                                     onTap: () {
-                                      // Forgot password logic
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (context) => const ForgotPasswordScreen()),
+                                      );
                                     },
                                     child: Text(
                                       "Forgot Password?",

@@ -14,11 +14,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // Toggle states
-
-  bool _wifiOnly = false;
-  bool _syncEnabled = true;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -48,11 +43,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
-          // GENERAL
-          _buildSectionHeader("GENERAL", headerColor),
-          _buildNavItem(theme, "Push Notifications"),
-          _buildNavItem(theme, "Manage Additional Fonts"),
-
           // DISPLAY
           _buildSectionHeader("DISPLAY", headerColor),
           ValueListenableBuilder<ThemeMode>(
@@ -68,39 +58,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 activeColor: Colors.blueAccent,
               );
             },
-          ),
-
-          // DOWNLOAD AND SYNC
-          _buildSectionHeader("DOWNLOAD AND SYNC", headerColor),
-          _buildSwitchItem(
-            theme,
-            "Wi-fi Only for Large Downloads",
-            "Tap for explanation",
-            _wifiOnly,
-            (val) => setState(() => _wifiOnly = val),
-            subTitleColor,
-          ),
-          _buildSwitchItem(
-            theme,
-            "Sync",
-            "Tap for explanation",
-            _syncEnabled,
-            (val) => setState(() => _syncEnabled = val),
-            subTitleColor,
-            activeColor: Colors.blueAccent,
-          ),
-
-          // SEND-TO-KINDLE EMAIL
-          _buildSectionHeader("SEND-TO-KINDLE EMAIL ADDRESS", headerColor),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: isDark ? const Color(0xFF1E1E1E) : Colors.grey.shade100,
-            child: Text(
-              "${widget.user.name.trim().toLowerCase().replaceAll(' ', '')}@kindle.com", // Mock email
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 16,
-              ),
-            ),
           ),
 
           // ABOUT
